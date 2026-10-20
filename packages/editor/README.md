@@ -31,7 +31,7 @@ The layout Worker retains at most 4,096 scalar edit maps. Future versions, expir
 
 Events include `change`, `documentchange`, `selectionchange`, `completionchange`, `diagnosticschange`, `themechange`, `notice` and `dispose`. `load()` replaces the document and emits `documentchange`; ordinary transactions emit `change`. `frame`, `caret`, `stats`, `performance` and `root` provide diagnostics and integration access. Initial creation resolves after the renderer and document are initialized; visible layout arrives asynchronously through the layout Worker. Scene replacement waits for complete visible layout and commits glyph-atlas writes with geometry, retaining the resident scene during asynchronous edits.
 
-Scenes include bounded geometry outside the viewport. `scroll` records the requested position; `renderedScroll` stays inside the resident scene's `scroll_min/scroll_max` coverage until a complete replacement arrives. Hit testing, caret geometry and overlays use the rendered position. Small movements within coverage render immediately, while large asynchronous jumps retain text on screen.
+Scenes include bounded geometry outside the viewport. `scroll` and its compatibility alias `renderedScroll` follow input immediately. Compatible completed frames continue to publish during scrolling even when their request number precedes the latest input; document and scene revisions reject obsolete content and configuration. Hit testing, caret geometry and overlays use the same translation. Cold content outside resident coverage can appear progressively while the Worker prepares it; unavailable geometry cannot select an unrelated cached line.
 
 ## Completion
 

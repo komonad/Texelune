@@ -29,7 +29,7 @@ editor.destroy();
 - `positionAt(offset)` / `offsetAt({line, character})` 使用从零开始的逻辑行和 UTF-16 列，适合 LSP。小字符串可用 `[...prefix].length` 将 JS 前缀转换为 scalar 数。
 - `lineRange(line)` 包含换行符。末尾空行可以是空范围。软折行不创建逻辑行。
 - 文本、格式、撤销、重做使 `version` 递增；`load()` 替换文档并从版本零开始。异步任务还应保存宿主文档身份，不能只比较版本零。
-- `frame` / `caret` 的几何采用视口 CSS 像素；`scroll` / `scrollTo(y)` 采用文档纵向 CSS 像素。`scroll` 是请求位置，`renderedScroll` 是当前实际绘制位置；布局未完成时两者可以不同。
+- `frame` / `caret` 的几何采用视口 CSS 像素；`scroll` / `scrollTo(y)` 采用文档纵向 CSS 像素。`renderedScroll` 是 `scroll` 的兼容别名，绘制位移立即跟随输入，不等待布局返回。
 
 ## 文档操作
 
@@ -45,7 +45,7 @@ editor.destroy();
 | `executeCommand(command)` | 执行内置编辑命令，返回 `Promise<boolean>`。 |
 | `format(style)`, `toggle(attribute)` | 设置完整样式，或切换 bold/italic/underline 并保留其他项。 |
 | `reveal(offset?)`, `focus()` | 最小幅度将目标滚入视口；默认当前光标。聚焦不触发浏览器页面滚动。 |
-| `scroll`, `renderedScroll`, `scrollTo(y)` | 请求位置、实际绘制位置，以及设置请求位置。小幅滚动复用场景缓冲，大幅跳转等待完整目标场景。 |
+| `scroll`, `renderedScroll`, `scrollTo(y)` | 读取或设置滚动位置，立即更新绘制位移；布局在 Worker 中持续更新。 |
 | `load(text,filename?)` | 替换文档、清空历史、文档装饰、inlay 和 overlay。 |
 | `loadSynthetic(bytes?,singleLine?)` | 异步生成 UTF-8 压力文档，默认 100MiB，导入可取消。 |
 
@@ -53,7 +53,9 @@ editor.destroy();
 
 `format` 使用 `{bold,italic,underline,foreground,background}`，颜色为 `[r,g,b,a]`，通道 0–1，`null` 清除颜色。未提供的布尔值取 `false`，颜色取 `null`；这是完整样式设置，不是局部补丁。
 
-`frame.scroll` 是场景几何的原点，`frame.scroll_min/scroll_max` 是该场景能完整覆盖的纵向滚动范围。`frame.navigation` 与场景几何使用这个原点；将它们映射到当前画面时，纵向减去 `renderedScroll - frame.scroll`。组件的 `caret`、鼠标命中、行号、诊断和悬浮层已经应用此偏移。新帧到达前，实际位置限制在完整覆盖范围内；滚动条仍跟随请求位置，目标场景就绪后一起切换。
+`frame.scroll` 是场景几何的原点，`frame.scroll_min/scroll_max` 描述该场景能完整覆盖的纵向范围，仅用于诊断，不限制输入。`frame.navigation` 与场景几何使用这个原点；将它们映射到当前画面时，纵向减去 `scroll - frame.scroll`。组件的 `caret`、鼠标命中、行号、诊断和悬浮层已经应用此偏移。目标位置的冷布局尚未生成时，场景缓冲以外的内容可暂时缺失；没有可用几何的位置不会命中不相关的缓存行。
+
+`frame.request` 是该场景处理的视口请求编号，持续滚动时可以小于最新请求。`frame.scene_revision` 将字体、尺寸、折行、主题与装饰等影响场景的状态分组；只有相同文档版本和相同场景修订的完整帧可以复用，且场景请求编号不会倒退。`frame.selection_revision` 标识已处理的选择与显露意图；选择变化不阻止兼容几何发布，过期意图不会覆盖当前滚动位置。性能追踪标识不作为画面接收条件。
 
 ## 扩展配置与编辑回调
 

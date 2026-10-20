@@ -115,7 +115,8 @@ struct Block {
     height: f32,
     cells: Vec<Cell>,
     rows: Vec<VisualRow>,
-    fast_window: Option<(usize, usize)>,
+    // Integral row bounds remain exact when large paragraph heights round in f32.
+    fast_window: Option<(usize, usize, usize)>,
     char_window: Option<std::ops::Range<usize>>,
 }
 impl Block {
@@ -494,6 +495,9 @@ impl LayoutEngine {
     pub fn tick(&mut self, budget_ms: f64) -> f64 {
         let start = now();
         self.jobs_processed = 0;
+        if !self.visible_ready() {
+            self.schedule();
+        }
         while now() - start < budget_ms.clamp(0.1, 4.) {
             let Some(line) = self.jobs.next_job() else {
                 break;
@@ -581,14 +585,14 @@ impl LayoutEngine {
                 }
             }
         }
-        if let Some((first, end)) = block.fast_window {
+        if let Some((first, end, total)) = block.fast_window {
             let row = (((self.scroll - self.heights.prefix(line) - 16.).max(0.)
                 / self.line_height as f64)
                 .floor() as usize)
-                .min((block.height / self.line_height).ceil() as usize - 1);
-            let last = (row + (self.height / self.line_height).ceil() as usize + 1)
-                .min((block.height / self.line_height).ceil() as usize);
-            first <= row && end >= last
+                .min(total - 1);
+            let last = (row + (self.height / self.line_height).ceil() as usize + 1).min(total);
+            let margin = ((self.height / self.line_height).ceil() as usize / 4).clamp(2, 8);
+            first <= row.saturating_sub(margin) && end >= (last + margin).min(total)
         } else {
             true
         }
@@ -701,7 +705,7 @@ impl LayoutEngine {
         let base = start + plan.as_ref().map(|p| p.first_char).unwrap_or(0);
         if let Some(plan) = &plan {
             block.height = plan.first_row as f32 * self.line_height;
-            block.fast_window = Some((plan.first_row, plan.end_row));
+            block.fast_window = Some((plan.first_row, plan.end_row, plan.total_rows));
             if !self.wrap {
                 block.char_window = Some(start + plan.first_char..start + plan.end_char);
             }
@@ -1139,7 +1143,7 @@ impl LayoutEngine {
             coverage_end += 16.;
         }
         if let Some(block) = self.blocks.get(&first) {
-            if let Some((row, _)) = block.fast_window {
+            if let Some((row, _, _)) = block.fast_window {
                 if row > 0 {
                     coverage_start = coverage_start.max(
                         self.heights.prefix(first) + 16. + row as f64 * self.line_height as f64,
@@ -1148,8 +1152,8 @@ impl LayoutEngine {
             }
         }
         if let Some(block) = self.blocks.get(&last) {
-            if let Some((_, end)) = block.fast_window {
-                if end < (block.height / self.line_height).ceil() as usize {
+            if let Some((_, end, total)) = block.fast_window {
+                if end < total {
                     coverage_end = coverage_end.min(
                         self.heights.prefix(last) + 16. + end as f64 * self.line_height as f64,
                     );

@@ -4,6 +4,8 @@ import{yieldTask}from'./benchmark.js';
 let engine,wasm,selection={anchor:0,head:0},scheduled=false,ready=false,generation=0,documentVersion=0,trace=null;
 let benchmarkToken=null,benchmarkAck=null;
 let pendingHandlerMs=0;
+let sceneRevision=0,selectionRevision=0,pendingView=null,needsFrame=true,pendingLayoutMs=0;
+function flushView(){if(pendingView){engine.viewport(pendingView);pendingView=null;}}
 function stopBenchmark(){benchmarkToken=null;benchmarkAck?.(false);benchmarkAck=null;}
 async function benchmark(m){
   benchmarkToken=m.token;let remaining=Math.min(256,Math.max(1,m.frames));
@@ -12,7 +14,7 @@ async function benchmark(m){
       const frames=[],transfer=[],begin=performance.now();
       do{
         const start=performance.now(),frame=engine.frame(selection,0);
-        frame.instances=engine.instances();frame.packed_navigation=engine.navigation();frame.worker_ms=performance.now()-start;
+        frame.scene_revision=sceneRevision;frame.selection_revision=selectionRevision;frame.instances=engine.instances();frame.packed_navigation=engine.navigation();frame.worker_ms=performance.now()-start;
         if(frame.patches.length){
           postMessage({type:'frame',frame,trace,elapsed:frame.worker_ms,marshal_ms:0,memory:wasm.memory.buffer.byteLength,sent_at:performance.timeOrigin+performance.now(),generation},[frame.instances.buffer,frame.packed_navigation.buffer]);
           throw new Error('Glyph atlas is warming; retry the benchmark');
@@ -34,12 +36,19 @@ function pump(){
     if(benchmarkToken!==null)return;
     try{
       const start=performance.now(),handlerMs=pendingHandlerMs;pendingHandlerMs=0;
-      const layout=engine.tick(2),marshalStart=performance.now();
+      flushView();
+      const tickMs=engine.tick(2);pendingLayoutMs+=tickMs;
+      if(!engine.visible_ready()||!needsFrame&&engine.pending()){
+        pendingHandlerMs+=handlerMs+Math.max(0,performance.now()-start-tickMs);pump();return;
+      }
+      const layout=pendingLayoutMs;pendingLayoutMs=0;
+      const marshalStart=performance.now();
       const frame=engine.frame(selection,layout);
+      frame.scene_revision=sceneRevision;frame.selection_revision=selectionRevision;needsFrame=!frame.visible_ready;
       frame.instances=engine.instances();
       frame.packed_navigation=engine.navigation();
       const marshal=Math.max(0,performance.now()-marshalStart-frame.scene_ms-frame.raster_ms);
-      postMessage({type:'frame',frame,trace,elapsed:performance.now()-start+handlerMs,marshal_ms:marshal,memory:wasm.memory.buffer.byteLength,sent_at:performance.timeOrigin+performance.now(),generation},[frame.instances.buffer,frame.packed_navigation.buffer]);
+      postMessage({type:'frame',frame,trace,elapsed:performance.now()-start+layout-tickMs+handlerMs,marshal_ms:marshal,memory:wasm.memory.buffer.byteLength,sent_at:performance.timeOrigin+performance.now(),generation},[frame.instances.buffer,frame.packed_navigation.buffer]);
       if(engine.pending())pump();else postMessage({type:'idle',generation});
     }catch(error){postMessage({type:'error',message:String(error),generation});}
   });
@@ -52,6 +61,13 @@ self.onmessage=async({data:m})=>{
     if(m.type==='benchmark'){if(ready){stopBenchmark();void benchmark(m);}return;}
     stopBenchmark();
     if(m.trace)trace=m.trace;
+    if(m.scene_revision!==undefined)sceneRevision=m.scene_revision;
+    if(m.selection_revision!==undefined)selectionRevision=m.selection_revision;
+    needsFrame=true;
+    if(m.type==='view'){
+      pendingView=m;if(ready)pump();return;
+    }
+    if(ready)flushView();
     if(m.type==='init'){
       generation=m.generation;wasm=await init();engine=new LayoutEngine();if(m.theme)engine.theme(m.theme);
       for(const font of m.fonts)engine.font(new Uint8Array(font));
@@ -71,7 +87,6 @@ self.onmessage=async({data:m})=>{
     }else if(m.type==='inlays')engine.inlays(m.inlays);
     else if(m.type==='theme')engine.theme(m.theme);
     else if(m.type==='highlights')engine.highlights(BigInt(m.version),m.spans);
-    else if(m.type==='view')engine.viewport(m);
     if(m.type!=='init')pendingHandlerMs+=performance.now()-handlingStart;
     if(ready)pump();
   }catch(error){postMessage({type:'error',message:String(error),generation});}

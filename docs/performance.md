@@ -20,7 +20,7 @@ Line transforms above 8192 scalars use a short-lived Worker. The main thread tra
 
 ## Scroll coverage
 
-Scene geometry includes up to 256 CSS pixels of cached content above and below the viewport, limited to half the viewport per side. Long-line windows publish their smaller available coverage. A scroll redraw clamps translation to complete resident coverage until a matching target scene arrives. `scroll` exposes the requested position; `renderedScroll` exposes the position used for pixels and hit testing. Scrollbar input remains immediate during asynchronous layout. Overscan adds bounded geometry and raster work independently of document size.
+Scene geometry includes up to 256 CSS pixels of cached content above and below the viewport, limited to half the viewport per side. Scroll translation follows input immediately. Completed compatible frames can publish before the latest scroll request finishes; document and scene revisions prevent stale content, theme or layout configuration from publishing. View messages coalesce, incomplete layouts skip scene/raster construction, and prefetch publishes its final expansion. Long ASCII windows refresh with a bounded row margin before reaching the visible edge. Cold content beyond available geometry can appear progressively. Overscan work remains bounded independently of document size.
 
 ## Brackets and completion
 

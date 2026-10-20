@@ -1,7 +1,7 @@
 import init, {Editor, Renderer, DocumentImport, VisualNavigation} from './pkg/texelune_editor.js';
 import {PerformanceStats,PerformancePanel,FrameTracker,liveFpsText,liveCostText} from './performance.js';
 import {prepareDocument} from './import.js';
-import {inspectableFrame,FrameStager,sceneScroll} from './frame.js';
+import {inspectableFrame,FrameStager,acceptsScene} from './frame.js';
 import {BenchmarkRunner} from './benchmark.js';
 import {resolveTheme,applyThemeCSS} from './theme.js';
 import {scalarLength,indentInsertion,deadline} from './editing.js';
@@ -26,6 +26,7 @@ let editor,renderer,worker,navigation,fonts,ready=false,workerReady=false,navRea
 let initialSource={kind:'text',text:(options.value??'')};
 let initialText=(options.value??''), changes=[], inlays=[], externalHighlights=null, workerQueue=[], navQueue=[];
 let generation=0,request=0,latest=null,scroll=0,width=800,height=600,scale=1;
+let sceneRevision=0,selectionRevision=0,viewConfiguration='';
 let dirty=true,inFlight=0,blink=true,lastBlink=0,lastFrame=0,lastEdit=0,lastInputVersion=-1;
 let affinity=null,dragging=false,composition=null,preferredX=null;
 let pendingFrame=null,workerStarted=0,lastProgress=0,lastWorkerVersion=-1;
@@ -47,7 +48,7 @@ let api,interactions,diagnostics,editPending,wordSerial=0,wordPending=new Map(),
 let commands,completion,brackets;
 const mac=/Mac|iPhone|iPad/.test(navigator.platform);
 let keybindingOptions={...options.keybindings},keybinding=compileKeybindings(keybindingOptions,mac);
-function renderedScroll(){return sceneScroll(latest,scroll);}
+function renderedScroll(){return scroll;}
 const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(renderedScroll()-(latest?.scroll??0));return y+c.h>0&&y<height?{...c,y}:null;});
 function reportProvider(kind,error){emit('providererror',{kind,error});}
 function cancelEdit(){editPending?.abort();editPending=null;commands?.cancel();}
@@ -189,7 +190,9 @@ function post(message){
   if(benchmarkRunner.active)benchmarkRunner.cancel();
   if(performanceStats.benchmark){performanceStats.benchmark=null;performancePanel.benchmarkState({cancelled:true});}
   if(!postingTrace||!frameTracker.matches(postingTrace)){postingTrace=frameTracker.begin(performance.timeOrigin+performance.now());queueMicrotask(()=>postingTrace=null);}
-  message={...message,trace:postingTrace};
+  if(!['view','selection','navigate','reveal'].includes(message.type))sceneRevision++;
+  if(['selection','navigate','reveal','change'].includes(message.type))selectionRevision++;
+  message={...message,trace:postingTrace,scene_revision:sceneRevision,selection_revision:selectionRevision};
   if(workerReady)worker.postMessage(message);else workerQueue.push(message);
 }
 function navPost(message){if(navReady)navigation.postMessage(message);else navQueue.push(message);}
@@ -206,6 +209,8 @@ function updateStatus(){
   $('size').textContent=`${editor.length().toLocaleString()} chars · ${editor.lines().toLocaleString()} lines`;
 }
 function sendView(){
+  const configuration=[width,height,scale,fontSize,$('wrap').checked,$('code').checked].join(':');
+  if(configuration!==viewConfiguration){sceneRevision++;viewConfiguration=configuration;}
   post({type:'view',width,height,scale,scroll,font_size:fontSize,wrap:$('wrap').checked,code:$('code').checked,request:++request});
 }
 function selectionChanged(keepAffinity=false){
@@ -260,6 +265,8 @@ function caret(){
 }
 function hitAt(x,y){
   if(!visual||!latest||Number(latest.version)!==version())return null;
+  const documentY=scroll+y;
+  if(documentY<latest.scroll_min||documentY>latest.scroll_max+height)return null;
   const delta=renderedScroll()-(latest?.scroll??0),hit=visual?.hit_test(x,y+delta);return hit?{...hit,y:hit.y-delta}:null;
 }
 function ensureCaret(){
@@ -306,7 +313,7 @@ function startWorker(){
       for(const [name,value]of Object.entries({scene:m.frame.scene_ms,raster:m.frame.raster_ms,serialize:m.marshal_ms,transport:performance.timeOrigin+performance.now()-m.sent_at}))performanceStats.record(name,value);
       m.frame.patches=[];
       lastWorkerVersion=Number(m.frame.version);
-      if(visibleReady&&lastWorkerVersion===version()&&m.frame.request===request&&frameTracker.accepts(m.trace)){m.frame.trace=m.trace;m.frame.ready_at=performance.timeOrigin+performance.now();m.frame.backpressureMs=0;m.frame.blockedAt=inFlight>=2?m.frame.ready_at:null;pendingFrame=m.frame;dirty=true;}
+      if(visibleReady&&acceptsScene(m.frame,{version:version(),revision:sceneRevision,request,resident:latest,pending:pendingFrame})){m.frame.trace=m.trace;m.frame.ready_at=performance.timeOrigin+performance.now();m.frame.backpressureMs=0;m.frame.blockedAt=inFlight>=2?m.frame.ready_at:null;pendingFrame=m.frame;dirty=true;}
       if(m.frame.jobs_processed)$('worker').innerHTML=`${m.frame.layout_ms.toFixed(2)}<small>ms</small>`;
       $('jobs').textContent=`${m.frame.pending} jobs · ${m.frame.cached_blocks} cached blocks`;
       $('state').textContent=m.frame.pending?'Refining layout':'Ready';
@@ -380,7 +387,7 @@ function updateChrome(){
 function loop(time){
   if(destroyed)return;
   const frameStart=performance.now();performanceStats.tick(time);
-  if(pendingFrame&&(Number(pendingFrame.version)!==version()||pendingFrame.request!==request))pendingFrame=null;
+  if(pendingFrame&&!acceptsScene(pendingFrame,{version:version(),revision:sceneRevision,request,resident:latest,pending:null}))pendingFrame=null;
   const drawStartedAt=performance.timeOrigin+frameStart,hasNewFrame=!!pendingFrame;
   if(lastFrame){intervals.push(time-lastFrame);if(intervals.length>180)intervals.shift();}lastFrame=time;
   if(time-lastBlink>530){blink=!blink;lastBlink=time;if(editor&&root.activeElement===input&&currentSelection().head===currentSelection().anchor)dirty=true;}
@@ -392,8 +399,8 @@ function loop(time){
     if(atlas.reset)renderer.invalidate();renderer.patch(atlas.patches);
     const patchTime=performance.now()-patchStart;if(atlas.patches.length)performanceStats.record('atlas',patchTime);
     const uploadStart=performance.now();renderer.upload(latest.instances);visual?.free();visual=VisualNavigation.from_packed(latest.packed_navigation);performanceStats.record('geometry',performance.now()-uploadStart);
-    // Height corrections preserve the worker's document anchor.
-    scroll=latest.scroll;updateChrome();
+    // Height and reveal corrections apply only to the current viewport and caret intent.
+    if(latest.request===request&&latest.selection_revision===selectionRevision)scroll=latest.scroll;updateChrome();
     emit('frame',latest);
     $('loading').style.display='none';
   }

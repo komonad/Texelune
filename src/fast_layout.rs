@@ -33,8 +33,10 @@ impl MonoWindow {
         let total_rows = chars.div_ceil(columns).max(1);
         let visible_first =
             ((scroll.max(0.) / line_height as f64).floor() as usize).min(total_rows - 1);
-        let first_row = visible_first.saturating_sub(3);
-        let end_row = (visible_first + (height / line_height).ceil() as usize + 5).min(total_rows);
+        let visible_rows = (height / line_height).ceil() as usize;
+        let margin = visible_rows.clamp(8, 32);
+        let first_row = visible_first.saturating_sub(margin);
+        let end_row = (visible_first + visible_rows + margin + 2).min(total_rows);
         Self {
             columns,
             first_row,
@@ -49,10 +51,10 @@ impl MonoWindow {
 mod tests {
     use super::*;
     #[test]
-    fn hundred_megabyte_line_only_plans_visible_characters() {
+    fn hundred_megabyte_line_keeps_a_bounded_prefetch_window() {
         let plan = MonoWindow::new(100 * 1024 * 1024, 10., 800., 28., 560., 14_000_000.);
         assert_eq!(plan.columns, 80);
-        assert!(plan.end_char - plan.first_char < 2400);
+        assert!(plan.end_char - plan.first_char < 3 * 80 * 22);
         assert_eq!(plan.total_rows, (100usize * 1024 * 1024).div_ceil(80));
     }
 }

@@ -16,11 +16,11 @@ export class FrameStager {
   }
 }
 
-export function sceneScroll(frame,requested){
-  if(!frame)return 0;
-  const min=Number.isFinite(frame.scroll_min)?Math.min(frame.scroll_min,frame.scroll):frame.scroll;
-  const max=Number.isFinite(frame.scroll_max)?Math.max(frame.scroll_max,frame.scroll):frame.scroll;
-  return Math.max(min,Math.min(max,requested));
+export function acceptsScene(frame,{version,revision,request,resident,pending}){
+  if(!frame.visible_ready||Number(frame.version)!==version||frame.scene_revision!==revision)return false;
+  const lastRequest=Math.max(resident?.request??0,pending?.request??0);
+  const lastSelection=Math.max(resident?.selection_revision??0,pending?.selection_revision??0);
+  return frame.request<=request&&frame.request>=lastRequest&&(frame.selection_revision??0)>=lastSelection;
 }
 
 export function decodeNavigation(words){

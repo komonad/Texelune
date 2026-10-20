@@ -1,15 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FrameStager,sceneScroll} from '../../packages/editor/frame.js';
+import {FrameStager,acceptsScene} from '../../packages/editor/frame.js';
 
-test('resident geometry scrolls only inside its complete coverage until replacement arrives',()=>{
-  const frame={scroll:1000,scroll_min:800,scroll_max:1256};
-  assert.equal(sceneScroll(frame,1100),1100);
-  assert.equal(sceneScroll(frame,9000),1256);
-  assert.equal(sceneScroll(frame,0),800);
-  assert.equal(sceneScroll({...frame,scroll:9000,scroll_min:8744,scroll_max:9256},9000),9000);
-  assert.equal(sceneScroll({scroll:40},9000),40);
-  assert.equal(sceneScroll(null,9000),0);
+test('continuous scroll accepts compatible completed work without publishing superseded scene state',()=>{
+  const state={version:7,revision:12,request:100,resident:{request:90},pending:{request:93}};
+  const frame={version:7,scene_revision:12,request:95,visible_ready:true};
+  assert(acceptsScene(frame,state));
+  for(const patch of [{version:6},{scene_revision:11},{scene_revision:13},{request:92},{request:101},{visible_ready:false}])assert(!acceptsScene({...frame,...patch},state));
+  assert(!acceptsScene({...frame,selection_revision:3},{...state,resident:{request:90,selection_revision:4}}));
+  assert(acceptsScene({...frame,selection_revision:5},{...state,resident:{request:90,selection_revision:4}}));
 });
 
 test('partial frames retain atlas writes until a complete scene can replace the resident one',()=>{
