@@ -1,0 +1,72 @@
+# texelune-editor
+
+Framework-independent Rust/WASM/WebGPU text editor. Each instance owns its document, layout Worker, GPU renderer and Shadow DOM. WASM module code and fetched assets are shared by the browser module and HTTP caches. Fonts and generated WASM are included in the package.
+
+See [JavaScript / TypeScript API](API.md) for coordinate conventions, callbacks, providers, overlays, word selection, indentation and lifecycle contracts. Public declarations are included in `index.d.ts` and `lsp.d.ts`.
+
+```js
+import { createEditor } from 'texelune-editor';
+
+const editor = await createEditor(container, {
+  value: 'fn main() {}', filename: 'main.rs',
+  theme: 'paper', fontSize: 17, wrap: true,
+  syntax: true, performance: false,
+});
+const unsubscribe = editor.on('change', ({ detail }) => {
+  console.log(detail.version, detail.start, detail.end, detail.text);
+});
+editor.setTheme('dusk');
+editor.setInlays([{anchor: 3, text: ': fn()', block: false}]);
+unsubscribe();
+editor.destroy();
+```
+
+Give the container an explicit height, such as `height: 600px`. Serve the package assets over HTTPS or localhost with JavaScript, CSS, font and WASM MIME types. Worker URLs are relative to their modules. Direct ESM usage is available at `/packages/editor/index.js` in the development server. No application global or demo stylesheet is required. Removing the custom element disposes the instance. An instance is not reusable after disposal; create a new one when remounting.
+
+`text`, `slice`, `select`, `insert`, `replace`, `setHighlights` and inlay anchors use Unicode scalar offsets and half-open ranges. `positionAt` and `offsetAt` convert between scalar offsets and zero-based UTF-16 LSP positions using Ropey's UTF-16 index. Grapheme segmentation and visual BiDi caret movement remain inside the editor. `setHighlights(spans, readVersion)` accepts ranges in their original read version. The layout Worker replays subsequent edits before installing them at its current version. Resident highlights follow the same start/end affinities as rich-text decorations, including inherited styles inside inserted or replaced text. A new batch atomically replaces this provisional layer. Persistent formatting has precedence and stays in the document undo history.
+
+The layout Worker retains at most 4,096 scalar edit maps. Future versions, expired history and results older than an accepted analysis are rejected without clearing resident highlights. LSP requests a fresh checkpoint when rebasing history expires. Worker recovery installs the saved highlight checkpoint at its source version during document replay, then applies subsequent transactions. `frame.highlight_source_version` and `frame.highlight_spans` expose the represented analysis and resident range count.
+
+Events include `change`, `documentchange`, `selectionchange`, `themechange`, `notice` and `dispose`. `load()` replaces the document and emits `documentchange`; ordinary transactions emit `change`. `frame`, `caret`, `stats`, `performance` and `root` provide diagnostics and integration access. Initial creation resolves after the renderer and document are initialized; visible layout arrives asynchronously through the layout Worker.
+
+## Themes
+
+```js
+editor.setTheme({
+  name: 'My theme',
+  colors: { background: '#ffffff', foreground: '#292e3b', caret: '#2959cc' },
+  tokens: {
+    keyword: '#8041ae', function: '#315eb6', struct: '#20638b',
+    comment: {foreground: '#7c879b', italic: true},
+    'variable.readonly': {foreground: '#995222', bold: true},
+    '*.deprecated': {underline: true},
+  },
+});
+```
+
+Colors accept `#RRGGBB` or `#RRGGBBAA`. Partial themes inherit Paper defaults. Token rules apply in order: type, each wildcard modifier, each type-specific modifier. Styles include foreground, background, bold, italic and underline. Theme changes update GPU clear/caret colors, layout defaults, selection, inlays and editor chrome; the LSP adapter recolors cached semantic tokens without requesting them again.
+
+## LSP adapter
+
+```js
+import { LspClient } from 'texelune-editor/lsp';
+const language = new LspClient(editor, {
+  url: 'ws://127.0.0.1:4173/lsp',
+  rootUri: workspaceRootUri, uri: documentUri, languageId: 'rust',
+});
+language.addEventListener('diagnostics', ({detail}) => renderProblems(detail.diagnostics));
+await language.connect();
+const hover = await language.hover(editor.selection.head);
+const completions = await language.complete();
+language.dispose();
+```
+
+The adapter uses a dedicated Worker for WebSocket JSON-RPC, a Rust rope replica, UTF-16 positions and semantic token processing. It negotiates the semantic-token legend, UTF-16 encoding and document synchronization mode. Incremental changes are grouped after 30ms; servers requiring full synchronization receive snapshots from the Worker. Semantic and pull diagnostic requests use a 120ms debounce; push diagnostics are also supported. RPC requests time out after 10s, initialization after 20s, and the public connection attempt after 25s.
+
+Each semantic request owns an immutable rope snapshot and its read version. Because semantic-token responses omit a document version, a read barrier holds outgoing `didChange` notifications until the response or timeout. Local document edits, layout and rendering remain independent. The response's UTF-16 positions are decoded against its snapshot, never against the current replica. The layout Worker then rebases scalar ranges through its ordered edit history. At most one semantic request is active; intervening edits request one follow-up analysis and do not cancel the active read. The barrier releases buffered writes on response, timeout or document replacement. Interactive queries wait for this synchronization point and retain strict document-version checks.
+
+Document replacement cancels semantic reads; superseded diagnostics and same-kind interactive requests also send `$/cancelRequest`. Document epochs isolate different documents, and source versions/publication order prevent older analyses from replacing newer ones. Token conversion and theme styling yield around 1.5ms chunks. Theme changes reuse cached scalar ranges and their source version. Rust-analyzer's mutable-variable modifier maps immutable bindings to the readonly theme rule.
+
+The default LSP synchronization ceiling is 2MiB. Crossing it terminates the LSP Worker before obtaining a full document string; document editing, navigation, rendering and streamed stress imports remain available. The adapter exposes diagnostics, hover, definition and completion responses. `attach()` optionally binds hover and definition providers to the component's widgets and Ctrl/Meta/F12 navigation. Consumers handle external document loading and supported completion edits. The demo omits completion items requiring snippets or additional edits.
+
+WebSocket servers send one JSON-RPC object per text message. The included Rust development server bridges those messages to `rust-analyzer` Content-Length-framed stdio, binds to loopback, validates the browser Origin and kills each language-server process when its connection closes. `TEXELUNE_LSP_COMMAND` configures the executable path. The demo workspace is `examples/code-workspace`; open document buffers are held by the language server and do not write to source files.

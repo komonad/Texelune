@@ -1,0 +1,25 @@
+{
+  "name": "texelune-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/editor"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "cargo run --locked --release --bin serve",
+    "test": "node --test tests/js/*.test.mjs",
+    "test:metrics": "node --test tests/js/performance.test.mjs",
+    "test:lsp": "node --test tests/js/lsp.test.mjs",
+    "test:types": "tsc --project tsconfig.json",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "pack:editor": "node scripts/pack.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

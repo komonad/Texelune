@@ -1,0 +1,51 @@
+{
+  "name": "texelune-editor",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Rust and WebGPU editor component with isolated worker layout",
+  "type": "module",
+  "types": "./index.d.ts",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./lsp": {
+      "types": "./lsp.d.ts",
+      "import": "./lsp.js"
+    },
+    "./theme": {
+      "types": "./theme.d.ts",
+      "import": "./theme.js"
+    }
+  },
+  "files": [
+    "*.js",
+    "*.css",
+    "*.d.ts",
+    "pkg",
+    "fonts",
+    "README.md",
+    "API.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/komonad/Texelune.git",
+    "directory": "packages/editor"
+  },
+  "homepage": "https://github.com/komonad/Texelune#readme",
+  "bugs": {
+    "url": "https://github.com/komonad/Texelune/issues"
+  },
+  "keywords": [
+    "editor",
+    "webgpu",
+    "wasm",
+    "rust",
+    "rich-text",
+    "bidi",
+    "lsp"
+  ]
+}

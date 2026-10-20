@@ -1,0 +1,55 @@
+async page=>{
+  const assert=(condition,message)=>{if(!condition)throw Error(message);};
+  const stable=()=>page.waitForFunction(()=>{const e=window.texelune;return e?.frame?.visible_ready&&e.frame.pending===0&&e.frame.request===e.stats.request&&Number(e.frame.version)===e.version;},null,{timeout:30000});
+  await page.goto('http://127.0.0.1:4173/web/');await page.waitForFunction(()=>window.studio?.lsp.state==='ready');await stable();
+  await page.evaluate(()=>{window.studio.lsp.disconnect();window.texelune.showPerformance(false);window.texelune.load('target\n'+'wrapped text '.repeat(45)+'\nfoo_bar e\u0301 👩🏽‍💻 שלום 中文\n','interactions.txt');});await stable();
+  const point=offset=>page.evaluate(offset=>{const e=window.texelune,c=e.frame.navigation.cells.find(c=>c.start===offset),r=e.root.getElementById('viewport').getBoundingClientRect();if(!c)throw Error('Cell unavailable at '+offset);return{x:r.left+c.bounds[0]+c.bounds[2]*.3,y:r.top+c.bounds[1]+c.bounds[3]*.5};},offset);
+  const gutter=await point(7);await page.mouse.click((await page.locator('#viewport').boundingBox()).x+22,gutter.y);
+  assert(await page.evaluate(()=>{const e=window.texelune,r=e.lineRange(1);return e.selection.anchor===r.start&&e.selection.head===r.end;}),'gutter selects the entire logical wrapped line including terminator');
+  await page.evaluate(()=>window.texelune.load('foo_bar e\u0301 👩🏽‍💻 שלום 中文\n','words.txt'));await stable();
+  const selected=[];
+  for(const word of ['foo_bar','e\u0301','👩🏽‍💻','שלום']){
+    const offset=await page.evaluate(word=>{const t=window.texelune.text;return [...t.slice(0,t.indexOf(word))].length;},word),p=await point(offset);
+    await page.mouse.dblclick(p.x,p.y);await page.waitForFunction(word=>{const e=window.texelune,s=e.selection;return e.slice(Math.min(s.anchor,s.head),Math.max(s.anchor,s.head))===word;},word);
+    selected.push(word);
+  }
+  await page.evaluate(()=>{const segmenter=new Intl.Segmenter('zh',{granularity:'word'});window.texelune.configure({wordProvider:({text,start,offset,truncated})=>{if(truncated)return null;const local=[...text].slice(0,offset-start).join('').length,unit=segmenter.segment(text).containing(local);if(!unit)return null;const first=start+[...text.slice(0,unit.index)].length;return{start:first,end:first+[...unit.segment].length};}});});
+  const chinese=await page.evaluate(()=>{const e=window.texelune;return [...e.text.slice(0,e.text.indexOf('中文'))].length;}),chinesePoint=await point(chinese);
+  await page.mouse.dblclick(chinesePoint.x,chinesePoint.y);await page.waitForFunction(()=>{const e=window.texelune,s=e.selection;return e.slice(s.anchor,s.head)==='中文';});
+  await page.evaluate(()=>window.texelune.configure({wordProvider:undefined}));
+  await page.evaluate(()=>window.texelune.configure({hoverDelay:5,hoverProvider:async({offset,signal})=>({contents:'type information '+offset}),definitionProvider:async({offset})=>[{start:0,end:7,uri:'file:///mock.rs',range:{start:{line:0,character:0},end:{line:0,character:7}}}]}));
+  const word=await point(8);await page.mouse.move(word.x,word.y);await page.getByRole('tooltip').waitFor();
+  assert((await page.getByRole('tooltip').textContent()).includes('type information'),'hover provider renders inside editor');
+  await page.keyboard.down('Control');await page.waitForFunction(()=>!!window.texelune.root.querySelector('.definition-range'));
+  await page.mouse.click(word.x,word.y);await page.keyboard.up('Control');await stable();
+  assert(await page.evaluate(()=>window.texelune.selection.anchor===0&&window.texelune.selection.head===7),'Ctrl click follows a resolved definition');
+  await page.evaluate(()=>{window.texelune.select(8,8);window.texelune.focus();});await page.keyboard.press('F12');
+  await page.waitForFunction(()=>window.texelune.selection.anchor===0&&window.texelune.selection.head===7);
+  await page.evaluate(async()=>{window.texelune.configure({definitionProvider:()=>[{start:0,end:7,uri:'file:///first.rs'},{start:8,end:10,uri:'file:///second.rs'}]});await window.texelune.goToDefinition(8);});
+  await page.getByRole('button',{name:'second.rs:1',exact:true}).click();
+  assert(await page.evaluate(()=>window.texelune.selection.anchor===8&&window.texelune.selection.head===10),'multiple definition chooser navigates through an interactive overlay');
+  await page.evaluate(()=>{window.texelune.configure({autoIndent:'brackets',indentUnit:'  '});window.texelune.load('  fn main() {}','indent.rs');window.texelune.select(13,13);window.texelune.focus();});await stable();
+  await page.keyboard.press('Enter');await stable();
+  assert(await page.evaluate(()=>window.texelune.text==='  fn main() {\n    \n  }'&&window.texelune.selection.head===18),'bracket indentation inserts an undoable pair with interior caret');
+  await page.evaluate(()=>window.texelune.undo());await stable();assert(await page.evaluate(()=>window.texelune.text==='  fn main() {}'),'indent insertion is one undo transaction');
+  await page.evaluate(()=>{window.texelune.configure({autoIndent:({signal})=>new Promise(resolve=>{window.__indentSignal=signal;window.__indentResolve=resolve;})});window.texelune.select(13,13);window.texelune.focus();});
+  await page.keyboard.press('Enter');await page.waitForFunction(()=>!!window.__indentResolve);
+  await page.keyboard.type('x');await page.evaluate(()=>window.__indentResolve({text:'\nSTALE'}));await stable();
+  assert(await page.evaluate(()=>window.__indentSignal.aborted&&!window.texelune.text.includes('STALE')&&window.texelune.text.includes('x')),'asynchronous indentation cannot overwrite subsequent input');
+  await page.evaluate(()=>{window.__edits=[];window.texelune.configure({autoIndent:'none',onBeforeEdit:request=>request.text==='!'?false:{...request,text:request.text.toUpperCase()},onChange:change=>window.__edits.push(change),onKeyDown:(event,e)=>{if(event.key==='F2'){e.insert('shortcut');return true;}}});});
+  await page.keyboard.type('ab!');await page.keyboard.press('F2');await stable();
+  assert(await page.evaluate(()=>window.texelune.text.includes('ABSHORTCUT')&&!window.texelune.text.includes('!')&&window.__edits.length===3),'edit hooks transform and cancel input; custom keyboard commands share transactions');
+  const guarded=await page.evaluate(()=>window.texelune.applyEdit({start:0,end:0,text:'bad'},window.texelune.version-1));assert(!guarded,'optimistic edit rejects an obsolete version');
+  await page.evaluate(()=>{window.texelune.configure({onBeforeEdit:undefined,onChange:undefined,onKeyDown:undefined});window.__overlay=window.texelune.addOverlay({anchor:0,content:'custom widget',placement:'above'});window.texelune.replace(0,0,'X');});await stable();
+  assert(await page.evaluate(()=>window.__overlay.element.textContent==='custom widget'&&!window.__overlay.element.hidden),'custom widget survives mapped document edits');
+  await page.evaluate(()=>window.__overlay.dispose());assert(await page.evaluate(()=>!window.__overlay.element.isConnected),'widget disposer removes its DOM');
+  await page.evaluate(()=>window.texelune.load('identifier'.repeat(10000),'long-word.txt'));await stable();
+  const range=await page.evaluate(()=>window.texelune.wordRange(50000));assert(range.start===0&&range.end===100000,'large word segmentation runs through the navigation worker');
+  await page.evaluate(()=>{window.texelune.configure({hoverProvider:()=>new Promise(resolve=>window.__hoverResolve=resolve),hoverDelay:0});});
+  const p=await point(0);await page.mouse.move(p.x,p.y);await page.waitForFunction(()=>!!window.__hoverResolve);
+  await page.evaluate(()=>{window.texelune.insert('x');window.__hoverResolve('STALE HOVER');});await stable();
+  assert(await page.evaluate(()=>!window.texelune.root.querySelector('[role=tooltip]')),'editing invalidates an outstanding hover');
+  const disposed=await page.evaluate(async()=>{const {LspClient}=await import('../packages/editor/lsp.js');const e=window.texelune,client=new LspClient(e,{});client.attach();e.addOverlay({anchor:0,content:'dispose widget'});e.destroy();e.destroy();return{empty:e.root.childElementCount===0,state:client.state};});
+  assert(disposed.empty&&disposed.state==='disconnected','destroy releases custom widgets and attached language providers');
+  await page.evaluate(report=>window.__interactionsReport=report,{selected,range});
+}

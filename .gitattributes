@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.ttf binary
+*.wasm binary
+# Upstream notices and conformance fixtures retain their original whitespace.
+packages/editor/fonts/*-OFL.txt whitespace=-trailing-space
+tests/data/*.txt whitespace=-trailing-space

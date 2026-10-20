@@ -1,0 +1,31 @@
+async page=>{
+  const assert=(value,message)=>{if(!value)throw Error(message);};
+  const stable=()=>page.waitForFunction(()=>{const v=document.querySelector('texelune-editor').shadowRoot.getElementById('viewport').getBoundingClientRect(),c=document.querySelector('texelune-editor').shadowRoot.getElementById('canvas'),scale=Math.min(devicePixelRatio||1,3);return window.texelune?.frame?.visible_ready&&window.texelune.frame.pending===0&&window.texelune.frame.request===window.texelune.stats.request&&Number(window.texelune.frame.version)===window.texelune.stats.version&&c.width===Math.round(v.width*scale)&&c.height===Math.round(v.height*scale);},null,{timeout:30000});
+  await page.reload();await page.waitForFunction(()=>window.studio?.lsp.state==='ready');await stable();await page.evaluate(()=>window.studio.lsp.disconnect());
+  const before=await page.evaluate(()=>({info:window.texelune.documentInfo,selection:window.texelune.selection,prefix:window.texelune.slice(0,100)}));
+  const warm=await page.evaluate(()=>window.texelune.benchmark('warm'));
+  assert(warm.frames===320&&warm.rounds===5,'warm benchmark counts scored GPU-completed frames');
+  assert(warm.fps===1000*warm.frames/warm.elapsed_ms&&warm.mean_ms===warm.elapsed_ms/warm.frames,'benchmark reports measured amortized throughput');
+  const redraw=await page.evaluate(()=>window.texelune.benchmark('redraw'));
+  assert(redraw.frames===320&&redraw.worker_ms===0,'redraw benchmark reuses scene');
+  const after=await page.evaluate(()=>({info:window.texelune.documentInfo,selection:window.texelune.selection,prefix:window.texelune.slice(0,100)}));
+  assert(JSON.stringify(before)===JSON.stringify(after),'benchmarks preserve document and selection');
+  await page.evaluate(async()=>{window.__cancelledBenchmark=window.texelune.benchmark('warm').then(()=>false,e=>e.name==='AbortError');await new Promise(resolve=>setTimeout(resolve,3));window.texelune.insert('z');});
+  assert(await page.evaluate(()=>window.__cancelledBenchmark),'editing cancels benchmark');await stable();
+  assert(await page.evaluate(()=>window.texelune.performance.benchmark===null),'scene changes invalidate benchmark scores');
+  await page.evaluate(()=>window.texelune.loadSynthetic(100*1048576));await stable();
+  const large=await page.evaluate(()=>window.texelune.benchmark('warm'));
+  assert(large.bytes===100*1048576&&large.frames===320,'100MiB warm benchmark');
+  assert(large.main_ms>=0&&large.worker_ms>=0&&large.quads>0,'benchmark profile retains per-frame CPU costs');
+  await page.getByRole('button',{name:'全屏编辑器',exact:true}).click();await page.waitForFunction(()=>!!document.fullscreenElement);await stable();
+  const fullscreenLarge=await page.evaluate(()=>window.texelune.benchmark('warm'));
+  assert(fullscreenLarge.width>large.width&&fullscreenLarge.height>large.height,'fullscreen benchmark uses expanded target');
+  assert(fullscreenLarge.quads>large.quads,'fullscreen benchmark draws the expanded visible scene');
+  await page.evaluate(()=>document.querySelector('texelune-editor').shadowRoot.querySelector('.perf-body').scrollTop=0);await page.waitForTimeout(300);
+  await page.screenshot({path:'output/playwright/benchmark-fullscreen.png'});
+  await page.getByRole('button',{name:'退出全屏',exact:true}).click();await stable();
+  await page.evaluate(()=>window.texelune.benchmark('warm'));
+  await page.evaluate(()=>document.querySelector('texelune-editor').shadowRoot.querySelector('.perf-body').scrollTop=0);
+  await page.waitForTimeout(300);await page.screenshot({path:'output/playwright/benchmark-100mb.png'});
+  await page.evaluate(report=>window.__benchmarkReport=report,{warm,redraw,large,fullscreenLarge});
+}

@@ -1,0 +1,15 @@
+/target/
+/web/pkg/
+/output/
+/.playwright-cli/
+*.zip
+/packages/editor/pkg/
+/examples/code-workspace/target/
+/node_modules/
+**/node_modules/
+*.tgz
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example

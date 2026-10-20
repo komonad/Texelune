@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Texelune · Code Studio</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css"></head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="./"><span class="logo">t</span> texelune <span class="tag">STUDIO</span></a>
+    <p class="section-label">工作区</p>
+    <button class="file active" data-sample="rust"><span class="file-icon">rs</span><span>main.rs<small>Rust · LSP</small></span><span class="file-dot"></span></button>
+    <button class="file" data-sample="unicode"><span class="file-icon">文</span><span>unicode.txt<small>Grapheme / Unicode</small></span></button>
+    <button class="file" data-sample="bidi"><span class="file-icon">⇄</span><span>bidirectional.txt<small>RTL / BiDi</small></span></button>
+    <p class="section-label spaced">压力测试</p>
+    <button class="stress" id="large-100mb">100 MiB 混排文档 <span>↗</span></button>
+    <button class="stress" id="long-code">16 MiB 单行代码 <span>↗</span></button>
+    <button class="stress" id="large">100,000 行 <span>↗</span></button>
+    <button class="stress" id="long">长段落 <span>↗</span></button>
+    <button class="stress" id="combining">组合字符 <span>↗</span></button>
+    <div class="sidebar-bottom"><span class="section-label">独立组件</span><p>Rust 核心 / WebGPU 绘制<br>Worker 布局 / Shadow DOM</p><a href="component.html">查看双实例接入示例 ↗</a><code>texelune-editor</code></div>
+  </aside>
+  <main>
+    <header><div><span class="eyebrow">TEXELUNE / CODE STUDIO</span><h1>代码，按你的方式呈现。</h1><p>独立编辑器组件，接入语言服务与自定义主题。</p></div><div class="connection"><span class="connection-dot" id="connection-dot"></span><span id="connection-label">准备连接</span><button id="reconnect">重新连接</button></div></header>
+    <div class="studio-grid">
+      <section class="editor-column"><div class="document-heading"><span>src / <b id="document-name">main.rs</b></span><span id="highlight-source">加载编辑器…</span></div><div id="editor-container"></div><div class="editor-caption"><span id="component-state">WebGPU · Rust / WASM</span><span id="service-cost">语义高亮等待采样</span></div></section>
+      <aside class="inspector">
+        <div class="inspector-tabs" role="tablist"><button role="tab" data-panel="theme" class="active" aria-selected="true">主题</button><button role="tab" data-panel="problems" aria-selected="false">诊断 <span id="problem-count">0</span></button><button role="tab" data-panel="inspect" aria-selected="false">语言服务</button></div>
+        <section id="panel-theme" class="inspector-panel">
+          <div class="panel-heading"><h2>颜色与语义</h2><span class="pill">LIVE</span></div><p class="muted">语义类型由语言服务提供，样式由主题决定。</p>
+          <label class="field">主题<select id="theme-preset"><option value="paper">Paper · 明亮</option><option value="dusk">Dusk · 灰紫</option><option value="custom">Custom · 自定义</option></select></label>
+          <div class="token-controls"><label><span><i style="background:#8041ae"></i>keyword</span><input id="token-keyword" type="color" value="#8041ae" aria-label="关键字颜色"></label><label><span><i style="background:#315eb6"></i>function</span><input id="token-function" type="color" value="#315eb6" aria-label="函数颜色"></label><label><span><i style="background:#20638b"></i>type / struct</span><input id="token-type" type="color" value="#20638b" aria-label="类型颜色"></label></div>
+          <label class="check"><input id="readonly-bold" type="checkbox" checked> 只读变量使用粗体</label>
+          <div class="json-heading"><label for="theme-json">主题 JSON</label><button id="reset-theme">恢复默认</button></div><textarea id="theme-json" spellcheck="false" aria-label="主题 JSON"></textarea><button class="primary" id="apply-theme">应用主题</button><p class="feedback" id="theme-feedback" role="status">颜色变化会直接应用到语义 token。</p>
+        </section>
+        <section id="panel-problems" class="inspector-panel" hidden><div class="panel-heading"><h2>文档诊断</h2><button id="refresh-lsp">刷新</button></div><p class="muted">点击诊断定位到文档。</p><div id="diagnostics" role="list"><p class="empty">等待语言服务。</p></div></section>
+        <section id="panel-inspect" class="inspector-panel" hidden><div class="panel-heading"><h2>语言服务</h2><span class="pill">LSP</span></div><dl class="service-facts"><dt>服务端</dt><dd>rust-analyzer</dd><dt>传输</dt><dd>WebSocket / stdio</dd><dt>位置编码</dt><dd>UTF-16 ↔ Unicode scalar</dd><dt>文档同步</dt><dd>增量，30 ms 合并</dd><dt>语义更新</dt><dd>120 ms 防抖 / 过期丢弃</dd></dl><div class="service-buttons"><button id="hover-request">查看光标处类型</button><button id="completion-request">补全 · Ctrl+Space</button></div><pre id="hover-result">移动光标可查看符号信息。</pre><div id="completions"></div><p class="muted">大于 2 MiB 的文档暂停语言服务同步。编辑器仍独立处理布局、滚动和输入。</p></section>
+      </aside>
+    </div>
+    <footer><span id="app-status" role="status">启动编辑器…</span><span>Alt+P 性能面板 · Alt+Enter 全屏</span></footer>
+  </main>
+  <script type="module" src="studio.js"></script>
+</body></html>
