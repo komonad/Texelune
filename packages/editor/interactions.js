@@ -1,8 +1,8 @@
 import {deadline,plainContents} from './editing.js';
 
 export class Interactions {
-  constructor({api,options,overlays,wordRange,report}){
-    Object.assign(this,{api,options,overlays,wordRange,report});this.key=null;this.timer=0;this.hover=null;this.pointer=null;
+  constructor({api,options,overlays,wordRange,diagnosticHover=()=>null,report}){
+    Object.assign(this,{api,options,overlays,wordRange,diagnosticHover,report});this.key=null;this.timer=0;this.hover=null;this.pointer=null;
   }
   context(offset,signal){return{editor:this.api,offset,position:this.api.positionAt(offset),version:this.api.version,signal};}
   reset(){
@@ -11,6 +11,7 @@ export class Interactions {
     this.api.root.getElementById('viewport')?.classList.remove('has-definition');
   }
   changed(){this.reset();this.navigation?.abort();}
+  refresh(){const pointer=this.pointer;this.reset();if(pointer)this.move({ctrlKey:pointer.ctrl},{cluster:pointer.offset});}
   leave(){this.pointer=null;this.reset();}
   move(event,hit){
     this.pointer={offset:hit?.cluster??hit?.offset,ctrl:event.ctrlKey||event.metaKey};
@@ -19,10 +20,13 @@ export class Interactions {
     if(ctrl&&this.target&&offset>=this.target.range.start&&offset<this.target.range.end)return;
     if(this.key===key)return;this.reset();this.key=key;
     const provider=ctrl?this.options().definitionProvider:this.options().hoverProvider;
-    if(!provider)return;
+    const diagnostic=ctrl?null:this.diagnosticHover(offset);
+    if(!provider&&!diagnostic)return;
     const abort=this.read=new AbortController(),context=this.context(offset,abort.signal);
     this.timer=setTimeout(async()=>{
       try{
+        if(diagnostic)this.show(diagnostic,offset);
+        if(!provider)return;
         const result=await deadline(()=>provider(context),abort.signal,this.options().providerTimeout??8000);
         if(abort.signal.aborted||context.version!==this.api.version)return;
         if(ctrl){
@@ -36,7 +40,10 @@ export class Interactions {
         }else if(result){
           const content=result instanceof Node?result:typeof result==='string'?result:result.contents;
           const text=content instanceof Node?content:plainContents(content);
-          if(text)this.show(text,result.start??offset);
+          if(text){
+            if(diagnostic){const content=document.createElement('div');content.append(diagnostic);const details=document.createElement('div');details.className='hover-details';if(text instanceof Node)details.append(text);else details.textContent=text;content.append(details);this.show(content,result.start??offset);}
+            else this.show(text,result.start??offset);
+          }
         }
       }catch(error){abort.abort();if(error.name!=='AbortError')this.report(ctrl?'definition':'hover',error);}
     },ctrl?80:(this.options().hoverDelay??350));

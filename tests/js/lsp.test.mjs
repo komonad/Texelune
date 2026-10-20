@@ -78,3 +78,14 @@ test('provider binding disposal preserves a later custom provider',()=>{
   editor.configure({definitionProvider:custom});detach();detach();
   assert.equal(configuration.hoverProvider,original);assert.equal(configuration.definitionProvider,custom);client.dispose();
 });
+
+test('attached diagnostics reject stale batches and release only markers owned by the binding',()=>{
+  let configuration={},diagnostics=[];const editor={root:{host:new EventTarget()},version:3,get configuration(){return configuration;},configure:patch=>Object.assign(configuration,patch),get diagnostics(){return diagnostics;},setDiagnostics(items,version=3){if(version!==3)return false;diagnostics=[...items];return true;}};
+  const client=new LspClient(editor,{});client.attach();client.epoch=1;
+  client.receive({type:'diagnostics',epoch:1,version:2,diagnostics:[{message:'stale'}]});assert.equal(diagnostics.length,0);
+  client.receive({type:'diagnostics',epoch:1,version:3,diagnostics:[{message:'current'}]});assert.equal(diagnostics[0].message,'current');
+  client.disconnect();assert.equal(diagnostics.length,0);
+  client.epoch=4;client.receive({type:'diagnostics',epoch:4,version:3,diagnostics:[{message:'server'}]});
+  editor.setDiagnostics([{message:'application'}]);client.detach();assert.equal(diagnostics[0].message,'application');
+  client.dispose();
+});

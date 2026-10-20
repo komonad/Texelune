@@ -3,12 +3,12 @@ export const tokenModifiers=['declaration','static','async','readonly','defaultL
 
 export class TypeScriptService {
   constructor(ts,libraries){
-    this.ts=ts;this.files=new Map();this.libraries=new Map(Object.entries(libraries).map(([name,text])=>['/lib/'+name,text]));
+    this.ts=ts;this.files=new Map();this.revision=0;this.libraries=new Map(Object.entries(libraries).map(([name,text])=>['/lib/'+name,text]));
     const read=name=>this.files.get(name)?.text??this.libraries.get(name);
     this.service=ts.createLanguageService({
       getCompilationSettings:()=>({target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,strict:true,noEmit:true}),
       getScriptFileNames:()=>[...this.files.keys()],
-      getScriptVersion:name=>String(this.files.get(name)?.version??0),
+      getScriptVersion:name=>String(this.files.get(name)?.scriptVersion??0),
       getScriptSnapshot:name=>{const text=read(name);return text===undefined?undefined:ts.ScriptSnapshot.fromString(text);},
       getCurrentDirectory:()=>'/texelune-demo',getDefaultLibFileName:()=>'/lib/lib.es2022.full.d.ts',
       readFile:read,fileExists:name=>read(name)!==undefined,useCaseSensitiveFileNames:()=>true,
@@ -19,7 +19,8 @@ export class TypeScriptService {
   document(uri){const file=this.files.get(this.path(uri));if(!file)throw new Error('Document is not open');return file;}
   update(uri,text,version){
     const lines=[0];for(let i=0;i<text.length;i++){const ch=text.charCodeAt(i);if(ch===13){if(text.charCodeAt(i+1)===10)i++;lines.push(i+1);}else if(ch===10)lines.push(i+1);}
-    this.files.set(this.path(uri),{uri,text,version,lines});
+    // Compiler cache versions span document sessions; LSP versions restart on open.
+    this.files.set(this.path(uri),{uri,text,version,scriptVersion:++this.revision,lines});
   }
   offset(file,position){return Math.min(file.text.length,(file.lines[position.line]??file.text.length)+position.character);}
   position(file,offset){let low=0,high=file.lines.length;while(low+1<high){const mid=(low+high)>>>1;if(file.lines[mid]<=offset)low=mid;else high=mid;}return{line:low,character:offset-file.lines[low]};}
@@ -34,8 +35,8 @@ export class TypeScriptService {
     spans.sort((a,b)=>a.start-b.start);
     const data=[];let previousLine=0,previousCharacter=0,end=0;
     for(const span of spans){
-      if(span.start<end||span.type<0||span.type>=tokenTypes.length)continue;
-      end=span.start+span.length;let start=span.start;
+      if(span.start<end||span.start>=file.text.length||span.length<=0||span.type<0||span.type>=tokenTypes.length)continue;
+      end=Math.min(file.text.length,span.start+span.length);let start=span.start;
       while(start<end){
         const position=this.position(file,start),lineEnd=Math.min(end,file.lines[position.line+1]??file.text.length);
         let contentEnd=lineEnd;while(contentEnd>start&&/[\r\n]/.test(file.text[contentEnd-1]))contentEnd--;

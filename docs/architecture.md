@@ -14,7 +14,7 @@
 
 ## Layout and rendering
 
-The layout Worker owns a rope replica, font system, paragraph cache, height index, scheduler and glyph atlas. Viewport requests have independent sequence numbers. Only matching document versions and viewport requests replace the scene; atlas updates remain ordered independently.
+The layout Worker owns a rope replica, font system, paragraph cache, height index, scheduler and glyph atlas. Viewport requests have independent sequence numbers. Only complete visible layouts with matching document versions and viewport requests replace the scene. `FrameStager` retains ordered atlas patches from intermediate frames; texture writes and geometry upload commit together. Incomplete layouts and new atlas generations leave the resident GPU scene intact until a replacement is ready.
 
 Cosmic Text performs paragraph shaping and BiDi layout; Swash rasterizes glyphs. WebGPU draws instanced quads. Transferable `Float32Array` / `Uint32Array` buffers carry geometry and navigation; debug object views decode them lazily.
 
@@ -26,7 +26,7 @@ Paragraph jobs yield between calls around a 2ms cooperative budget. A single sha
 
 Persistent formatting belongs to document history. External highlights form a replaceable layer and follow edits with the same anchor affinities. Incoming batches retain their read version and rebase through at most 4096 scalar edit maps. Future, expired or older committed analyses preserve the resident layer.
 
-`lsp-worker.js` owns WebSocket JSON-RPC and a Rust mirror. Semantic reads own immutable rope snapshots. A read barrier temporarily holds outgoing `didChange` notifications while editing, layout and rendering continue. Results decode UTF-16 against the snapshot and publish scalar ranges with that version; layout replays subsequent edits. Response, timeout or document replacement releases the barrier. One follow-up analysis coalesces intervening edits.
+`lsp-worker.js` owns WebSocket or Worker JSON-RPC and a Rust mirror. Semantic reads own immutable rope snapshots. A read barrier temporarily holds outgoing `didChange` notifications while editing, layout and rendering continue. Results decode UTF-16 against the snapshot and publish scalar ranges with that version; layout replays subsequent edits. Response, timeout or document replacement releases the barrier. One follow-up analysis coalesces intervening edits.
 
 Interactive queries wait for synchronization and retain strict version checks. Definitions normalize `Location` and `LocationLink`; local targets become scalar ranges, external targets retain URI and UTF-16 ranges. File URI comparison normalizes Windows drive case.
 
@@ -42,7 +42,7 @@ The optional Rust server bridges WebSocket JSON to rust-analyzer stdio. It binds
 | Large ASCII and imports | `src/fast_layout.rs`, `src/import.rs` |
 | WASM and GPU | `src/browser.rs`, `src/gpu.rs`, `src/quads.wgsl` |
 | Host lifecycle | `packages/editor/runtime.js`, `index.js` |
-| Providers and widgets | `interactions.js`, `overlays.js`, `editing.js` in the component |
+| Providers, widgets and diagnostics | `interactions.js`, `overlays.js`, `diagnostics.js`, `editing.js` in the component |
 | Language service | `lsp.js`, `lsp-worker.js`, `rpc.js`, `theme.js` in the component |
 
 See [API](../packages/editor/API.md), [integration](integration.md) and [performance](performance.md).

@@ -18,6 +18,10 @@ export async function mount(container: HTMLElement, workspace: {rootUri: string;
   });
   const off = editor.on('change', ({detail}) => console.log(detail.version, detail.text));
   const frameOff = editor.on('frame', ({detail}) => console.log(detail.visible_ready, detail.layout_ms));
+  const diagnosticsOff = editor.on('diagnosticschange', ({detail}) => console.log(detail.version, detail.diagnostics));
+  editor.setDiagnostics([{start:0, end:0, message:'Source checkpoint', severity:4, source:'Integration'}], editor.version);
+  const diagnostic = editor.goToDiagnostic(-1);
+  if (diagnostic) console.log(diagnostic.code, editor.diagnostics.length);
   const client = new LspClient(editor, {url: 'ws://127.0.0.1:4173/lsp', rootUri: workspace.rootUri, uri: workspace.uri});
   const detach = client.attach();
   client.addEventListener('diagnostics', ({detail}) => console.log(detail.diagnostics.map(item => item.message)));
@@ -30,5 +34,5 @@ export async function mount(container: HTMLElement, workspace: {rootUri: string;
   editor.select(range.start, range.end);
   const revision = editor.version;
   editor.applyEdit({start: 0, end: 0, text: '// module\n'}, revision);
-  return () => {widget.dispose();off();frameOff();detach();client.dispose();editor.destroy();};
+  return () => {widget.dispose();off();frameOff();diagnosticsOff();detach();client.dispose();editor.destroy();};
 }

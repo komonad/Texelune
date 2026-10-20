@@ -27,7 +27,13 @@ Give the container an explicit height, such as `height: 600px`. Serve the packag
 
 The layout Worker retains at most 4,096 scalar edit maps. Future versions, expired history and results older than an accepted analysis are rejected without clearing resident highlights. LSP requests a fresh checkpoint when rebasing history expires. Worker recovery installs the saved highlight checkpoint at its source version during document replay, then applies subsequent transactions. `frame.highlight_source_version` and `frame.highlight_spans` expose the represented analysis and resident range count.
 
-Events include `change`, `documentchange`, `selectionchange`, `themechange`, `notice` and `dispose`. `load()` replaces the document and emits `documentchange`; ordinary transactions emit `change`. `frame`, `caret`, `stats`, `performance` and `root` provide diagnostics and integration access. Initial creation resolves after the renderer and document are initialized; visible layout arrives asynchronously through the layout Worker.
+Events include `change`, `documentchange`, `selectionchange`, `diagnosticschange`, `themechange`, `notice` and `dispose`. `load()` replaces the document and emits `documentchange`; ordinary transactions emit `change`. `frame`, `caret`, `stats`, `performance` and `root` provide diagnostics and integration access. Initial creation resolves after the renderer and document are initialized; visible layout arrives asynchronously through the layout Worker. Scene replacement waits for complete visible layout and commits glyph-atlas writes with geometry, retaining the resident scene during asynchronous edits.
+
+## Diagnostics
+
+`setDiagnostics(items, readVersion = editor.version)` accepts scalar ranges with messages and optional severity (1 error, 2 warning, 3 information, 4 hint), source and code. It rejects noncurrent versions without erasing current markers. `diagnostics` is a read-only snapshot; `diagnosticschange` reports updates. Transactions and document replacement clear obsolete reports. Diagnostics do not enter undo history.
+
+The component draws virtualized underlines and gutter marks, composes messages with symbol hover, and shows severity counts. F8 / Shift+F8 or `goToDiagnostic(1 | -1)` navigate diagnostics with wrapping and BiDi-aware reveal. The four diagnostic colors are theme settings. `LspClient.attach()` binds diagnostic events automatically and releases only markers it still owns on detach or disconnect.
 
 ## Themes
 

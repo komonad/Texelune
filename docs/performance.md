@@ -6,6 +6,8 @@ Input commits local transactions without waiting for shaping. Layout, BiDi, font
 
 Visible blocks and nearby paragraphs are cached. Height estimates survive invalidation. GPU submissions are bounded; device-loss recovery attempts to rebuild renderer resources and layout state.
 
+Intermediate layout frames can contain only part of the viewport. They contribute atlas patches to a staging buffer but do not replace the resident scene. A matching complete visible frame commits texture patches and geometry together, including atlas-generation changes. Editing therefore retains the last complete image while replacement layout runs. CPU-frame metrics count patch work once, inside that commit.
+
 ## Large documents
 
 The deterministic fixture builds exact UTF-8 byte sizes in Rust ropes. Each call handles at most 64KiB and JavaScript yields around 1.5ms chunks. The document changes atomically after import, so cancellation preserves it. Synthetic descriptors avoid an extra 100MiB source string.

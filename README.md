@@ -20,6 +20,7 @@ Status: experimental, pre-1.0. The component is a private workspace distributed 
 - Viewport virtualization, streamed 100MiB fixtures and windowed layout for long ASCII lines.
 - Themes, font-size controls, fullscreen, draggable scrollbars and in-editor performance diagnostics.
 - An optional LSP adapter for semantic highlights, diagnostics, hover, definitions and completion results.
+- Diagnostic underlines, gutter marks, hover messages, severity counts and F8 navigation.
 
 ## Run from a fresh clone
 

@@ -8,6 +8,7 @@ export interface Selection { anchor: number; head: number; }
 export interface Highlight { start: number; end: number; style: TextStyle; }
 export interface Inlay { anchor: number; text: string; block: boolean; }
 export interface TextRange { start: number; end: number; }
+export interface EditorDiagnostic extends TextRange { message: string; severity?: 1 | 2 | 3 | 4; source?: string; code?: string | number; tags?: ReadonlyArray<1 | 2>; }
 export interface LspRange { start: Position; end: Position; }
 export interface NavigationTarget { uri?: string; range?: LspRange; selectionRange?: LspRange; start?: number; end?: number; originRange?: TextRange; }
 export interface ProviderContext { editor: EditorAPI; offset: number; position: Position; version: number; signal: AbortSignal; }
@@ -63,7 +64,7 @@ export interface PerformanceSnapshot {
   frameTrace: {state: string; id?: number; startedAt?: number; epoch?: number};
 }
 export interface EditorChange { version: number; start: number; end: number; text: string; selection: Selection; decorations: Highlight[]; }
-export interface EditorEvents { change: EditorChange; beforeedit: BeforeEdit; navigate: NavigationTarget; frame: Frame; providererror: {kind: string; error: Error}; documentchange: {name: string; version: number; bytes: number}; selectionchange: Selection; themechange: ResolvedTheme; notice: string; dispose: null; }
+export interface EditorEvents { change: EditorChange; beforeedit: BeforeEdit; navigate: NavigationTarget; frame: Frame; diagnosticschange: {version: number; diagnostics: ReadonlyArray<Readonly<EditorDiagnostic>>}; providererror: {kind: string; error: Error}; documentchange: {name: string; version: number; bytes: number}; selectionchange: Selection; themechange: ResolvedTheme; notice: string; dispose: null; }
 export interface EditorAPI {
   readonly element: TexeluneEditorElement;
   readonly root: ShadowRoot;
@@ -92,6 +93,9 @@ export interface EditorAPI {
   showHover(content: string | Node, anchor?: number): void;
   hideHover(): void;
   goToDefinition(offset?: number): Promise<void>;
+  readonly diagnostics: ReadonlyArray<Readonly<EditorDiagnostic>>;
+  setDiagnostics(items: ReadonlyArray<EditorDiagnostic>, readVersion?: number): boolean;
+  goToDiagnostic(direction?: 1 | -1): Readonly<EditorDiagnostic> | null;
   reveal(offset?: number): void;
   readonly scroll: number;
   positionAt(offset: number): Position;

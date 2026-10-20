@@ -23,7 +23,7 @@ export class LspClient extends EventTarget {
   }
   receive(m){
     if(m.epoch!==this.epoch)return;
-    if(m.type==='status'){if('quiescent'in m)this.quiescent=m.quiescent;this.status(m.state,m.message);if(['error','disconnected'].includes(m.state)){this.connectPending?.reject(new Error(m.message));this.rejectPending();this.worker?.terminate();this.worker=null;}return;}
+    if(m.type==='status'){if('quiescent'in m)this.quiescent=m.quiescent;this.status(m.state,m.message);if(['error','disconnected'].includes(m.state)){this.clearDiagnostics?.();this.connectPending?.reject(new Error(m.message));this.rejectPending();this.worker?.terminate();this.worker=null;}return;}
     if(m.type==='connected'){this.capabilities=m.capabilities;this.status(m.indexing?'indexing':'ready',m.server.name+(m.indexing?' 正在索引工作区…':' 已连接'));this.connectPending?.resolve(m);this.emit('connected',m);return;}
     if(m.type==='reply'){const pending=this.pending.get(m.id);if(!pending)return;pending.cleanup();if(m.error||pending.version!==this.editor.version)pending.reject(new Error(m.error??'Document changed'));else pending.resolve(m.result);return;}
     if(m.type==='tokens'){
@@ -63,12 +63,15 @@ export class LspClient extends EventTarget {
   attach(){
     this.detach?.();const previous=this.editor.configuration;
     const providers={hoverProvider:context=>this.worker?this.hover(context.offset,{signal:context.signal}):null,definitionProvider:context=>this.worker?this.definition(context.offset,{signal:context.signal}):null};
-    this.editor.configure(providers);let attached=true;
-    const detach=()=>{if(!attached)return;attached=false;const current=this.editor.configuration,restore={};for(const key of Object.keys(providers))if(current[key]===providers[key])restore[key]=previous[key];this.editor.configure(restore);};
+    this.editor.configure(providers);let attached=true,ownedDiagnostics=null;
+    const clearDiagnostics=()=>{if(ownedDiagnostics&&this.editor.diagnostics===ownedDiagnostics)this.editor.setDiagnostics([]);ownedDiagnostics=null;};
+    const diagnostics=({detail})=>{if(this.editor.setDiagnostics?.(detail.diagnostics,detail.version)!==false)ownedDiagnostics=this.editor.diagnostics;};
+    this.clearDiagnostics=clearDiagnostics;this.addEventListener('diagnostics',diagnostics);
+    const detach=()=>{if(!attached)return;attached=false;this.removeEventListener('diagnostics',diagnostics);clearDiagnostics();if(this.clearDiagnostics===clearDiagnostics)this.clearDiagnostics=null;const current=this.editor.configuration,restore={};for(const key of Object.keys(providers))if(current[key]===providers[key])restore[key]=previous[key];this.editor.configure(restore);};
     this.detach=detach;return detach;
   }
   refresh(){this.worker?.postMessage({type:'refresh'});}
   rejectPending(){for(const pending of [...this.pending.values()]){pending.cleanup();pending.reject(new Error('LSP session changed'));}this.pending.clear();}
-  disconnect(){this.worker?.terminate();this.worker=null;this.epoch++;this.highlightSource=-1;this.highlightBatch=0;this.quiescent=false;this.connectPending?.reject(new Error('LSP session disconnected'));this.rejectPending();this.status('disconnected','LSP 未连接');}
+  disconnect(){this.clearDiagnostics?.();this.worker?.terminate();this.worker=null;this.epoch++;this.highlightSource=-1;this.highlightBatch=0;this.quiescent=false;this.connectPending?.reject(new Error('LSP session disconnected'));this.rejectPending();this.status('disconnected','LSP 未连接');}
   dispose(){this.detach?.();this.detach=null;this.disconnect();this.abort.abort();}
 }

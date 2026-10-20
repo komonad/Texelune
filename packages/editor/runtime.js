@@ -1,12 +1,13 @@
 import init, {Editor, Renderer, DocumentImport, VisualNavigation} from './pkg/texelune_editor.js';
 import {PerformanceStats,PerformancePanel,FrameTracker,liveFpsText,liveCostText} from './performance.js';
 import {prepareDocument} from './import.js';
-import {inspectableFrame} from './frame.js';
+import {inspectableFrame,FrameStager} from './frame.js';
 import {BenchmarkRunner} from './benchmark.js';
 import {resolveTheme,applyThemeCSS} from './theme.js';
 import {scalarLength,indentInsertion,deadline} from './editing.js';
 import {OverlayLayer} from './overlays.js';
 import {Interactions} from './interactions.js';
+import {DiagnosticLayer} from './diagnostics.js';
 let wasmPromise;
 
 export async function mountEditor(root,options={}){
@@ -24,7 +25,7 @@ let dirty=true,inFlight=0,blink=true,lastBlink=0,lastFrame=0,lastEdit=0,lastInpu
 let affinity=null,dragging=false,composition=null,preferredX=null;
 let pendingFrame=null,workerStarted=0,lastProgress=0,lastWorkerVersion=-1;
 let rendererGeneration=0,recovering=false;
-let atlasIdentity='';
+const frameStager=new FrameStager();
 let restartTimer=0,drawCount=0,intervals=[],submitTimes=[],lastMetrics=0,lastLatency=null;
 const formatDefaults={bold:false,italic:false,underline:false,foreground:null,background:null};
 const performanceStats=new PerformanceStats(),performancePanel=new PerformancePanel(performanceStats,root);
@@ -34,9 +35,10 @@ let theme=initialTheme;
 applyThemeCSS(root.host,theme);
 let wasm,layoutMemory=null,navMemory=0,visual=null,fontSize=17,importEpoch=0,adapterLabel='';
 let motionQueue=[],motionPending=null,motionSerial=0,drainingMotions=false;
-let pendingPatchMs=0,lastDrawCalls=0,scrollDrag=null;
+let lastDrawCalls=0,scrollDrag=null;
 let pendingLiveWorkerMs=0,pendingLiveUpdate=false,lastGpuRequest=-Infinity;
-let api,interactions,editPending,wordSerial=0,wordPending=new Map(),wordReads=new Set(),selectionSerial=0,selectionDrag=null,selectionAbort,documentGeneration=0;
+let chromeScroll=NaN;
+let api,interactions,diagnostics,editPending,wordSerial=0,wordPending=new Map(),wordReads=new Set(),selectionSerial=0,selectionDrag=null,selectionAbort,documentGeneration=0;
 const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(scroll-(latest?.scroll??scroll));return y+c.h>0&&y<height?{...c,y}:null;});
 function reportProvider(kind,error){emit('providererror',{kind,error});}
 function cancelEdit(){editPending?.abort();editPending=null;}
@@ -203,6 +205,7 @@ function selectionChanged(keepAffinity=false){
 function commit(change){
   if(!change)return;
   cancelEdit();interactions?.changed();cancelWords();
+  clearDiagnostics();
   for(const item of overlays.items)item.anchor=Editor.map_anchor(item.anchor,change.start,change.end,scalarLength(change.text));
   if(!drainingMotions)cancelMotions();
   inlays=inlays.map(i=>({...i,anchor:Editor.map_anchor(i.anchor,change.start,change.end,[...change.text].length)}));
@@ -218,6 +221,12 @@ function commit(change){
   }
 }
 function applyToggle(attribute){commit(editor.toggle(attribute));input.focus({preventScroll:true});}
+function clearDiagnostics(){if(diagnostics?.items.length){diagnostics.set([]);emit('diagnosticschange',{version:version(),diagnostics:diagnostics.items});}}
+function goToDiagnostic(direction=1){
+  const selection=currentSelection(),item=diagnostics.index.next(Math.min(selection.anchor,selection.head),direction);if(!item)return null;
+  editor.select(item.start,item.end);selectionChanged();post({type:'reveal',offset:item.start});input.focus({preventScroll:true});
+  interactions.show(diagnostics.hover(item.start),item.start);return item;
+}
 function applyStyle(style){
   commit(editor.format({...formatDefaults,...style}));input.focus({preventScroll:true});
 }
@@ -278,18 +287,15 @@ function startWorker(){
       for(const message of workerQueue)worker.postMessage(message);
       workerQueue=[];sendView();post({type:'selection',selection:currentSelection()});
     }else if(m.type==='frame'){
-      const identity=`${mine}:${m.frame.atlas_epoch}`;
-      if(identity!==atlasIdentity){renderer.invalidate();latest=null;pendingFrame=null;atlasIdentity=identity;}
-      // Atlas patches are ordered independently of document-version acceptance.
-      const patchStart=performance.now();renderer.patch(m.frame.patches);
-      const patchTime=performance.now()-patchStart;pendingPatchMs+=patchTime;if(m.frame.patches.length)performanceStats.record('atlas',patchTime);
+      // Atlas writes and geometry switch together when the visible layout is complete.
+      const visibleReady=frameStager.stage(m.frame,mine);
       layoutMemory=m.memory;
       m.frame.worker_ms=m.elapsed;
       if(m.frame.jobs_processed)performanceStats.record('layout',m.frame.layout_ms);
       for(const [name,value]of Object.entries({scene:m.frame.scene_ms,raster:m.frame.raster_ms,serialize:m.marshal_ms,transport:performance.timeOrigin+performance.now()-m.sent_at}))performanceStats.record(name,value);
       m.frame.patches=[];
       lastWorkerVersion=Number(m.frame.version);
-      if(lastWorkerVersion===version()&&m.frame.request===request&&frameTracker.accepts(m.trace)){m.frame.trace=m.trace;m.frame.ready_at=performance.timeOrigin+performance.now();m.frame.backpressureMs=0;m.frame.blockedAt=inFlight>=2?m.frame.ready_at:null;pendingFrame=m.frame;dirty=true;}
+      if(visibleReady&&lastWorkerVersion===version()&&m.frame.request===request&&frameTracker.accepts(m.trace)){m.frame.trace=m.trace;m.frame.ready_at=performance.timeOrigin+performance.now();m.frame.backpressureMs=0;m.frame.blockedAt=inFlight>=2?m.frame.ready_at:null;pendingFrame=m.frame;dirty=true;}
       if(m.frame.jobs_processed)$('worker').innerHTML=`${m.frame.layout_ms.toFixed(2)}<small>ms</small>`;
       $('jobs').textContent=`${m.frame.pending} jobs · ${m.frame.cached_blocks} cached blocks`;
       $('state').textContent=m.frame.pending?'Refining layout':'Ready';
@@ -318,9 +324,10 @@ function startNavigation(){
 }
 function installDocument(next,source,name){
   documentGeneration++;cancelEdit();interactions?.changed();cancelWords();
+  clearDiagnostics();
   for(const item of [...overlays.items]){item.element.remove();overlays.items.delete(item);}
   importEpoch++;performancePanel.task(null);cancelMotions();composition=null;input.value='';
-  renderer?.invalidate();$('loading').style.display='flex';$('loading').querySelector('b').textContent='Preparing document layout';$('loading-detail').textContent='Loading the visible region…';
+  renderer?.invalidate();frameStager.reset();$('loading').style.display='flex';$('loading').querySelector('b').textContent='Preparing document layout';$('loading-detail').textContent='Loading the visible region…';
   editor?.free();editor=next;initialSource=source;initialText=source.text??'';changes=[];inlays=[];externalHighlights=null;
   navigation?.terminate();navigation=null;navReady=false;navQueue=[];navMemory=0;
   visual?.free();visual=null;scroll=0;latest=null;affinity=null;lastInputVersion=-1;lastWorkerVersion=-1;lastEdit=0;lastLatency=null;
@@ -348,6 +355,7 @@ function positionInput(){
 }
 function updateChrome(){
   if(!latest)return;
+  chromeScroll=scroll;
   const delta=scroll-latest.scroll;
   const labels=latest.labels.filter(l=>l.y-delta>-28&&l.y-delta<height);
   $('numbers').replaceChildren(...labels.map(l=>{const el=document.createElement('span');el.textContent=l.line;el.style.top=`${l.y-delta}px`;return el;}));
@@ -355,10 +363,12 @@ function updateChrome(){
   $('thumb').style.height=`${thumb}px`;$('thumb').style.top=`${(track-thumb)*scroll/Math.max(1,total-height)}px`;
   positionInput();
   overlays.update(overlays.range?latest.navigation.cells:[],delta);
+  diagnostics?.render();
 }
 function loop(time){
   if(destroyed)return;
   const frameStart=performance.now();performanceStats.tick(time);
+  if(pendingFrame&&(Number(pendingFrame.version)!==version()||pendingFrame.request!==request))pendingFrame=null;
   const drawStartedAt=performance.timeOrigin+frameStart,hasNewFrame=!!pendingFrame;
   if(lastFrame){intervals.push(time-lastFrame);if(intervals.length>180)intervals.shift();}lastFrame=time;
   if(time-lastBlink>530){blink=!blink;lastBlink=time;if(editor&&root.activeElement===input&&currentSelection().head===currentSelection().anchor)dirty=true;}
@@ -366,6 +376,9 @@ function loop(time){
     latest=pendingFrame;pendingFrame=null;
     latest=inspectableFrame(latest);
     pendingLiveWorkerMs+=Math.max(0,latest.worker_ms||0);pendingLiveUpdate=true;
+    const atlas=frameStager.take(latest),patchStart=performance.now();
+    if(atlas.reset)renderer.invalidate();renderer.patch(atlas.patches);
+    const patchTime=performance.now()-patchStart;if(atlas.patches.length)performanceStats.record('atlas',patchTime);
     const uploadStart=performance.now();renderer.upload(latest.instances);visual?.free();visual=VisualNavigation.from_packed(latest.packed_navigation);performanceStats.record('geometry',performance.now()-uploadStart);
     // Height corrections preserve the worker's document anchor.
     scroll=latest.scroll;updateChrome();
@@ -373,6 +386,7 @@ function loop(time){
     $('loading').style.display='none';
   }
   if(renderer&&ready&&!benchmarkRunner.active&&inFlight<2&&(dirty||$('continuous').checked)){
+    if(latest&&scroll!==chromeScroll)updateChrome();
     const c=caret(),s=currentSelection();
     try{
       let drew=false;
@@ -399,7 +413,7 @@ function loop(time){
         }).catch(()=>{});
         if(latest&&lastEdit&&lastInputVersion===Number(latest.version)){lastLatency=performance.now()-lastEdit;performanceStats.record('input',lastLatency);lastEdit=0;}
       }
-      const frameCpu=performance.now()-frameStart+pendingPatchMs;pendingPatchMs=0;performanceStats.record('frame',frameCpu);
+      const frameCpu=performance.now()-frameStart;performanceStats.record('frame',frameCpu);
       if(drew&&latest){performanceStats.recordLive({kind:pendingLiveUpdate?'update':'redraw',workerMs:pendingLiveWorkerMs,mainMs:frameCpu,now:performance.now(),gpuSupported:renderer.timestamp_supported()});pendingLiveWorkerMs=0;pendingLiveUpdate=false;}
       submitTimes.push(frameCpu);if(submitTimes.length>180)submitTimes.shift();dirty=!drew;
       if(c)positionInput();
@@ -481,6 +495,7 @@ input.addEventListener('keydown',e=>{
   if(!ready||e.isComposing||composition)return;
   if(e.defaultPrevented)return;
   try{if(options.onKeyDown?.(e,api)===true){e.preventDefault();return;}}catch(error){reportProvider('keydown',error);}
+  if(e.key==='F8'){e.preventDefault();goToDiagnostic(e.shiftKey?-1:1);return;}
   if(e.defaultPrevented)return;
   if(e.key==='Escape'){interactions?.reset();cancelEdit();return;}
   if(e.key==='F12'){e.preventDefault();void interactions?.go();return;}
@@ -560,7 +575,7 @@ const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(viewport)
 function dispose(){
   if(destroyed)return;destroyed=true;ready=false;controller.abort();importEpoch++;rendererGeneration++;
   clearTimeout(restartTimer);cancelAnimationFrame(animation);resizeObserver.disconnect();performancePanel.destroy();
-  cancelEdit();selectionAbort?.abort();interactions?.destroy();overlays.destroy();cancelWords();
+  cancelEdit();selectionAbort?.abort();interactions?.destroy();diagnostics?.destroy();overlays.destroy();cancelWords();
   benchmarkRunner.cancel();worker?.terminate();navigation?.terminate();visual?.free();editor?.free();renderer?.free();
   renderer=null;editor=null;visual=null;root.replaceChildren();emit('dispose',null);
 }
@@ -602,6 +617,13 @@ async function boot(){
       showHover(content,anchor=currentSelection().head){interactions.show(content,anchor);},
       hideHover(){interactions.reset();},
       goToDefinition(offset){return interactions.go(offset);},
+      get diagnostics(){return diagnostics.items;},
+      setDiagnostics(items,readVersion){
+        if(destroyed)return false;readVersion??=version();
+        if(!Number.isSafeInteger(readVersion)||readVersion!==version())return false;
+        diagnostics.set(items);interactions.refresh();emit('diagnosticschange',{version:readVersion,diagnostics:diagnostics.items});return true;
+      },
+      goToDiagnostic,
       reveal(offset=currentSelection().head){post({type:'reveal',offset:Math.max(0,Math.min(editor.length(),offset))});},
       get scroll(){return scroll;},
       toggle(attribute){applyToggle(attribute);},
@@ -625,7 +647,8 @@ async function boot(){
         externalHighlights={spans,version:documentVersion};post({type:'highlights',...externalHighlights});sendView();return true;
       },
     };
-    interactions=new Interactions({api,options:()=>options,overlays,wordRange,report:reportProvider});
+    diagnostics=new DiagnosticLayer(api,viewport,$('numbers'),$('diagnostic-summary'));
+    interactions=new Interactions({api,options:()=>options,overlays,wordRange,diagnosticHover:offset=>diagnostics.hover(offset),report:reportProvider});
     return api;
   }catch(error){if(!destroyed)dispose();throw error;}
 }

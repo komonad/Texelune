@@ -44,7 +44,7 @@ $('reset-theme').onclick=()=>{applyTheme(structuredClone(themes.paper));$('theme
 function renderDiagnostics(items){
   diagnostics=items;$('problem-count').textContent=items.length;$('diagnostics').replaceChildren();
   if(!items.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=hasLanguageService?'当前没有诊断。':'未连接语言服务。';$('diagnostics').append(empty);return;}
-  for(const item of items){const button=document.createElement('button');button.className='diagnostic'+(item.severity===1?' error':'');button.setAttribute('role','listitem');const message=document.createElement('span');message.textContent=item.message;const location=document.createElement('small');location.textContent=`${item.source??'rust-analyzer'} · Ln ${item.range.start.line+1}:${item.range.start.character+1}`;button.append(message,location);button.onclick=()=>{editor.select(item.start,item.end);editor.focus();editor.scrollTo(Math.max(0,item.range.start.line*28-120));};$('diagnostics').append(button);}
+  for(const item of items){const button=document.createElement('button');button.className='diagnostic '+['','error','warning','information','hint'][item.severity??1];button.setAttribute('role','listitem');const message=document.createElement('span');message.textContent=item.message;const location=document.createElement('small'),position=item.range?.start??editor.positionAt(item.start);location.textContent=`${item.source??workspace.server} · ${item.code??''} · Ln ${position.line+1}:${position.character+1}`;button.append(message,location);button.onclick=()=>{editor.select(item.start,item.end);editor.reveal(item.start);editor.focus();};$('diagnostics').append(button);}
 }
 function plainContents(contents){if(typeof contents==='string')return contents;if(Array.isArray(contents))return contents.map(plainContents).join('\n\n');return contents?.value??'';}
 async function hover(){if(!hasLanguageService)return;try{const result=await lsp.hover();$('hover-result').textContent=plainContents(result?.contents)||'光标处没有符号信息。';return result;}catch(error){if(!/changed|session/.test(error.message))$('hover-result').textContent=error.message;}}
@@ -83,9 +83,9 @@ async function boot(){
     lsp.addEventListener('status',({detail})=>{if(!hasLanguageService)return;$('connection-label').textContent={ready:workspace.server??'Language server',indexing:'索引中',connecting:'连接中',disconnected:'未连接',paused:'同步暂停',waiting:'等待服务',error:'连接失败'}[detail.state]??detail.state;$('connection-dot').className='connection-dot '+detail.state;status(detail.message);});
     lsp.addEventListener('tokens',({detail})=>{$('highlight-source').textContent=`LSP semantic · ${detail.count} tokens`;$('component-state').textContent=`WebGPU · ${detail.theme}`;});
     lsp.addEventListener('timing',({detail})=>$('service-cost').textContent='语义请求与处理 '+detail.elapsed.toFixed(1)+' ms');
-    lsp.addEventListener('diagnostics',({detail})=>renderDiagnostics(detail.diagnostics));
+    editor.on('diagnosticschange',({detail})=>renderDiagnostics(detail.diagnostics));
     editor.root.host.addEventListener('selectionchange',()=>{clearTimeout(hoverTimer);if(!editor.selection||$('panel-inspect').hidden)return;hoverTimer=setTimeout(hover,350);});
-    editor.root.host.addEventListener('change',()=>{clearTimeout(hoverTimer);renderDiagnostics([]);$('completions').replaceChildren();});
+    editor.root.host.addEventListener('change',()=>{clearTimeout(hoverTimer);$('completions').replaceChildren();});
     editor.root.host.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.code==='Space'){event.preventDefault();void complete();}},{capture:true});
     editor.root.host.addEventListener('notice',({detail})=>status(detail));
     updateThemeFields();

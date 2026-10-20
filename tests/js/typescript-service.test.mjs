@@ -42,3 +42,18 @@ test('browser TypeScript service returns real type errors and prefix replacement
   assert.throws(()=>service.document(uri),/not open/);
   service.handle('shutdown',{});
 });
+
+test('reopening a URI at version zero invalidates the compiler snapshot from the preceding session',()=>{
+  const service=new TypeScriptService(ts,libraries);
+  service.handle('textDocument/didOpen',{textDocument:{uri,text:'const previousName = "hello";\nconsole.log(previousName);',version:0}});
+  service.handle('textDocument/semanticTokens/full',{textDocument:{uri}});
+  service.handle('textDocument/didClose',{textDocument:{uri}});
+  const text='const x: number = "wrong";';
+  service.handle('textDocument/didOpen',{textDocument:{uri,text,version:0}});
+  const items=service.handle('textDocument/diagnostic',{textDocument:{uri}}).items;
+  assert(items.some(item=>item.code===2322));
+  const tokens=decodeTokenData(service.handle('textDocument/semanticTokens/full',{textDocument:{uri}}).data,{tokenTypes,tokenModifiers});
+  assert(tokens.every(token=>token.line===0&&token.character+token.length<=text.length));
+  assert.match(service.handle('textDocument/hover',{textDocument:{uri},position:{line:0,character:6}}).contents.value,/x: number/);
+  service.handle('shutdown',{});
+});

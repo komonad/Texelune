@@ -85,7 +85,8 @@ editor.configure({
 | `selectionchange` | `Selection`。 |
 | `documentchange` | `{name,version,bytes}`。 |
 | `themechange` | 完整解析后的主题。 |
-| `frame` | 主线程接受并上传几何后的 `Frame`，不代表 GPU 已显示完成。 |
+| `frame` | 可见布局完整、版本与视口请求匹配且几何已上传的 `Frame`，不代表 GPU 已显示完成。 |
+| `diagnosticschange` | `{version,diagnostics}`，诊断替换或过期清除。 |
 | `navigate` | `NavigationTarget`，可取消默认跳转。 |
 | `providererror` | `{kind,error}`，取消不作为错误报告。 |
 | `notice` | 用户状态字符串。 |
@@ -193,6 +194,24 @@ editor.configure({
 `setFontSize(10..40)`、`setWrap(boolean)`、`setSyntax(boolean)` 控制字号、折行、内置词法着色。`showPerformance()` 控制内置性能窗；`performance` 提供实时工作估算、完整更新计时及分阶段样本。`benchmark('warm'|'redraw')` 是独立离屏吞吐测试，`cancelBenchmark()` 取消。`restartLayout()` 重建布局副本。
 
 100MiB 文档与超长 ASCII 行采用视口虚拟化。任意超长复杂 Unicode/BiDi 段落仍可能完整整形，144Hz 不是对全部设备和文本的保证。昂贵业务计算需离开主线程。
+
+## 诊断标记
+
+```ts
+editor.setDiagnostics([
+  {start:6, end:11, message:'Expected a number', severity:1, source:'Checker', code:'E1'},
+], editor.version);
+editor.on('diagnosticschange', ({detail}) => updateProblems(detail.diagnostics));
+editor.goToDiagnostic(1);
+```
+
+`EditorDiagnostic` 使用 scalar 半开范围，包含 `start/end/message`，可选 `severity/source/code/tags`。严重级别 1/2/3/4 分别为错误、警告、信息、提示，默认 1。零长度范围显示位置标记；诊断不修改文本、持久格式或撤销历史。正文标记按折行和 BiDi 可见单元定位，悬浮显示消息、来源和代码；状态栏提供计数，行号区域显示严重级别。
+
+`setDiagnostics(items,readVersion=version)` 同步接受当前版本的批次并返回 `true`。未来或过期版本返回 `false`，保留当前诊断；范围非法时抛出 `TypeError`。`diagnostics` 返回只读诊断数组。文本或格式事务、撤销/重做、文档替换会清除诊断，等待语言服务重新分析。
+
+`goToDiagnostic(1|-1)` 循环选择下一个或上一个诊断，滚动定位并显示消息，返回诊断或 `null`。快捷键为 F8 / Shift+F8；`onKeyDown` 可拦截。`LspClient.attach()` 自动将当前文档的诊断批次绑定到组件；取消绑定或断开服务只清除仍由该绑定拥有的标记。
+
+主题 `colors` 可配置 `diagnosticError`、`diagnosticWarning`、`diagnosticInformation`、`diagnosticHint`。标记只构造视口内的 DOM，区间索引按可见范围查询；重叠区域显示最高严重级别，悬浮最多列出 20 条诊断。
 
 ## LSP
 

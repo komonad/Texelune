@@ -1,7 +1,7 @@
-import type {EditorAPI,NavigationTarget,HoverResult} from './index.js';
+import type {EditorAPI,EditorDiagnostic,NavigationTarget,HoverResult} from './index.js';
 export interface LspOptions { url?: string; workerUrl?: string; workerType?: 'module' | 'classic'; rootUri: string; uri: string; languageId?: string; maxDocumentBytes?: number; timeout?: number; }
 export interface Completion { label: string; detail: string; text: string; start: number; end: number; additionalEdits: boolean; snippet: boolean; }
-export interface Diagnostic { range: import('./index.js').LspRange; start: number; end: number; message: string; severity?: number; source?: string; code?: string | number; }
+export interface Diagnostic extends EditorDiagnostic { range: import('./index.js').LspRange; }
 export interface LspEvents {
   status: {state: string; message: string};
   connected: {server: {name: string; version?: string}; capabilities: Record<string, unknown>};

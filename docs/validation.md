@@ -1,5 +1,11 @@
 # Validation
 
+## Diagnostic presentation and scene continuity
+
+`tests/browser/diagnostics-check.js` validates rust-analyzer error underlines, hover messages, gutter severity, F8 navigation and problem-list reveal. It also covers all four diagnostic severities, mixed Unicode/BiDi ranges, EOF point diagnostics, stale-batch rejection, edit invalidation and binding ownership. The static Pages check validates the same editor markers from the TypeScript Worker, including reopening the same URI at document version zero. Unit tests compare diagnostic interval queries with a full scan over nested ranges.
+
+`tests/browser/flicker-check.js` edits a 100MiB mixed document with alternating newlines and characters, samples resident scenes during asynchronous layout, and verifies that all published scenes have complete visible layout and nonzero geometry. It also restarts the layout Worker and runs a warm benchmark. Frame-staging tests cover patches retained from incomplete frames and replacement atlas/Worker generations. CPU patch work is measured inside the frame commit.
+
 ## Component and language services
 
 - Interaction checks cover complete logical-line gutter selection, Unicode and locale-specific word providers, combining and ZWJ clusters, RTL words, pointer hover, Ctrl navigation, F12, multiple targets, custom overlay disposal, edit transformation/cancellation, custom keyboard handlers and optimistic version guards. Asynchronous indentation and hover results cannot overwrite later input.
@@ -8,7 +14,7 @@
 - The independent `texelune-editor` ESM package contains styles, Workers, fonts, WASM and TypeScript declarations. The application imports its public entry point. Two instances retain independent documents, versions and themes; removing one releases its Worker and leaves the other editable. Removing an instance during initialization cancels creation.
 - The Rust WebSocket/stdio bridge connects to rust-analyzer 1.93.0. Browser checks validate semantic token colors in GPU glyph geometry, cached-token recoloring without document transactions, incremental edits, pull diagnostics with scalar ranges, diagnostic navigation, symbol hover after emoji/RTL prefixes, local-binding completion and its replacement range, stale query rejection, disconnect and reconnect.
 - A 100MiB streamed import remains virtualized and pauses the LSP adapter before full-text synchronization. The default language-service synchronization ceiling is 2MiB. This ceiling does not constrain editor document size.
-- Ten protocol/theme/client tests cover out-of-order replies, protocol errors, timeouts and cancellation, URI identity, provider binding ownership, server configuration requests, relative semantic token coordinates, modifier precedence, document epochs, acceptance of earlier read versions, rejection of older committed analyses and the large-document guard. Two editing-policy tests cover indentation and asynchronous deadlines. Eight metric tests remain separate.
+- Protocol/theme/client tests cover out-of-order replies, protocol errors, timeouts and cancellation, URI identity, provider binding ownership, server configuration requests, relative semantic token coordinates, modifier precedence, document epochs, acceptance of earlier read versions, rejection of older committed analyses and the large-document guard. Two editing-policy tests cover indentation and asynchronous deadlines. Eight metric tests remain separate.
 - Native UTF-16 conversion tests cover astral scalars, combining sequences, CRLF and end-of-document clamping. Shaping tests cover multilingual fallback under italic themes, alongside grapheme/BiDi caret mapping.
 - TypeScript declarations pass strict checking with DOM and ES2022 libraries. The package supports direct module loading without the Studio application.
 - An extracted `.tgz` runs on a separate localhost server with only a mount element and an ESM import. Fonts, CSS, WASM, layout Worker, text insertion and theme switching load from the extracted package; no Studio global is present and the browser reports no errors.
@@ -61,7 +67,7 @@ The expanded regression validates the performance panel as a child of the editor
 - Disabling wrapping on that fixture and moving to the document end retains 87 quads, exposes the final caret and resets vertical scrolling to zero.
 - Cancelling a new streamed import preserves the active document. Fifty consecutive visual left moves through wrapped RTL text cross rows correctly.
 - The 100MiB regression observes no main-thread Long Tasks in the browser that exposes the Long Tasks API. This is not a universal device guarantee.
-- Geometry and navigation move through transferable Float32Array and Uint32Array buffers. The production path does not serialize per-glyph JavaScript objects; debug views decode them lazily. CPU frame metrics include patch work accumulated from message handlers, geometry preparation and render submission. GPU duration is measured separately using sampled timestamp queries when available, with quantized zero readings identified explicitly.
+- Geometry and navigation move through transferable Float32Array and Uint32Array buffers. The production path does not serialize per-glyph JavaScript objects; debug views decode them lazily. CPU frame metrics include committed atlas patch work, geometry preparation and render submission. GPU duration is measured separately using sampled timestamp queries when available, with quantized zero readings identified explicitly.
 
 The ASCII path does not establish acceptable performance for arbitrarily long complex BiDi paragraphs. Those retain full paragraph shaping and remain a performance limitation.
 
@@ -101,6 +107,6 @@ The browser scenarios exercise real keyboard events and editor controls, with th
 
 A short continuous-render sample on the large-line fixture records approximately 0.5ms P95 for CPU encoding/submission. That sample precedes the expanded CPU-frame instrumentation and excludes first-load costs, GPU execution time and some message/atlas processing. It must not be interpreted as an end-to-end frame or 144Hz guarantee.
 
-An earlier regression with expanded frame-loop instrumentation records approximately 0.7ms warm CPU-frame P95 on the same fixture. The current CPU-frame instrumentation includes accumulated message-handler atlas patch processing; GPU execution remains separately timed.
+An earlier regression with expanded frame-loop instrumentation records approximately 0.7ms warm CPU-frame P95 on the same fixture. CPU-frame instrumentation includes atlas patch commits and geometry upload; GPU execution remains separately timed.
 
 The browser reports no application errors in the passing regression run. Real OS IME, clipboard permission variations, assistive technology, mobile editing, GPU loss recovery and broad hardware performance remain to be validated.

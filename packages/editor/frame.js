@@ -1,3 +1,21 @@
+export class FrameStager {
+  constructor(){this.reset();}
+  reset(){this.active=null;this.incoming=null;this.frames=new WeakMap();}
+  stage(frame,generation){
+    const identity=`${generation}:${frame.atlas_epoch}`;
+    if(this.incoming?.identity!==identity)this.incoming={identity,patches:[]};
+    this.incoming.patches.push(...frame.patches);frame.patches=[];
+    this.frames.set(frame,this.incoming);
+    return frame.visible_ready;
+  }
+  take(frame){
+    const atlas=this.frames.get(frame);
+    if(!atlas||!frame.visible_ready)throw new Error('A complete staged frame is required');
+    const reset=this.active!==atlas.identity;this.active=atlas.identity;
+    return{reset,patches:atlas.patches.splice(0)};
+  }
+}
+
 export function decodeNavigation(words){
   const floats=new Float32Array(words.buffer,words.byteOffset,words.length),cells=[],hits=[],rows=[];
   let p=4;

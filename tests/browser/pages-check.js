@@ -6,6 +6,10 @@ async page=>{
   page.on('request',request=>{if(/\/(api|lsp)(\/|\?|$)/.test(new URL(request.url()).pathname))backend.push(request.url());});
   const stable=()=>page.waitForFunction(()=>window.texelune?.frame?.visible_ready&&window.texelune.frame.pending===0&&Number(window.texelune.frame.version)===window.texelune.version,null,{timeout:30000});
   await page.goto('http://127.0.0.1:4176/pages/');
+  await page.waitForFunction(()=>window.studio?.lsp.state==='ready');
+  const original=await page.evaluate(()=>{const text=window.texelune.text;window.texelune.load('const count: number = "wrong";','main.ts');return text;});
+  await page.waitForFunction(()=>window.texelune.diagnostics.some(item=>item.code===2322)&&window.texelune.root.querySelector('.diagnostic-mark[data-severity="1"]'));
+  await page.evaluate(text=>window.texelune.load(text,'main.ts'),original);
   await stable();
   await page.waitForFunction(()=>window.studio?.lsp.state==='ready'&&document.getElementById('highlight-source').textContent.includes('tokens'),null,{timeout:30000});
   assert(await page.evaluate(()=>!!window.studio.lsp.worker&&!!window.studio.lsp.options.workerUrl),'static boot starts a language Worker');
@@ -26,6 +30,7 @@ async page=>{
   await page.waitForFunction(()=>window.__tokens.some(event=>event.appliedVersion===window.texelune.version));
   await page.evaluate(()=>window.texelune.load('const count: number = "wrong";\nconst greeting = "hi";\ngreet','main.ts'));await stable();
   await page.waitForFunction(()=>window.studio.diagnostics.some(item=>item.code===2322));
+  assert(await page.evaluate(()=>!!window.texelune.root.querySelector('.diagnostic-mark[data-severity="1"]')),'Worker diagnostics appear inside the editor');
   const completions=await page.evaluate(()=>window.studio.lsp.complete([...window.texelune.text].length));
   assert(completions.some(item=>item.label==='greeting'&&item.end-item.start===5),'completion replaces the typed prefix');
   const timeout=await page.evaluate(async()=>{
