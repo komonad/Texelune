@@ -31,6 +31,8 @@ The layout Worker retains at most 4,096 scalar edit maps. Future versions, expir
 
 Events include `change`, `documentchange`, `selectionchange`, `completionchange`, `diagnosticschange`, `themechange`, `notice` and `dispose`. `load()` replaces the document and emits `documentchange`; ordinary transactions emit `change`. `frame`, `caret`, `stats`, `performance` and `root` provide diagnostics and integration access. Initial creation resolves after the renderer and document are initialized; visible layout arrives asynchronously through the layout Worker. Scene replacement waits for complete visible layout and commits glyph-atlas writes with geometry, retaining the resident scene during asynchronous edits.
 
+Scenes include bounded geometry outside the viewport. `scroll` records the requested position; `renderedScroll` stays inside the resident scene's `scroll_min/scroll_max` coverage until a complete replacement arrives. Hit testing, caret geometry and overlays use the rendered position. Small movements within coverage render immediately, while large asynchronous jumps retain text on screen.
+
 ## Completion
 
 `LspClient.attach()` installs an asynchronous completion provider with the hover, definition and diagnostic bindings. Ctrl/Meta+Space requests candidates beside the caret; typing identifiers, `.` or `:` requests after a configurable debounce. Up/Down choose a candidate, Enter/Tab accept and Escape closes the list. Pointer selection retains input focus. Theme colors apply to the popup.

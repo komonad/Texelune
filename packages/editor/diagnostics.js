@@ -46,7 +46,7 @@ export class DiagnosticLayer {
     this.summary.hidden=!this.items.length;this.render();
   }
   render(){
-    const {api,index}=this,frame=api.frame,delta=api.scroll-(frame?.scroll??api.scroll),height=this.viewport.clientHeight;
+    const {api,index}=this,frame=api.frame,delta=api.renderedScroll-(frame?.scroll??api.renderedScroll),height=this.viewport.clientHeight;
     const boxes=[],gutter=new Map();
     if(frame&&Number(frame.version)===api.version&&index.items.length){
       const add=(x,y,w,h,severity)=>{

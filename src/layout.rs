@@ -60,6 +60,8 @@ pub struct Frame {
     pub labels: Vec<LineLabel>,
     pub total_height: f64,
     pub scroll: f64,
+    pub scroll_min: f64,
+    pub scroll_max: f64,
     pub pending: usize,
     pub visible_ready: bool,
     pub quad_count: usize,
@@ -1090,6 +1092,8 @@ impl LayoutEngine {
             labels: vec![],
             total_height: self.heights.total() + 32.,
             scroll: self.scroll,
+            scroll_min: self.scroll,
+            scroll_max: self.scroll,
             pending: self.jobs.pending(),
             visible_ready: self.visible_ready(),
             quad_count: 0,
@@ -1107,8 +1111,61 @@ impl LayoutEngine {
             highlight_source_version: self.highlight_history.source_version(),
             highlight_spans: self.external.len(),
         };
-        let first = self.heights.locate(self.scroll);
-        let last = self.heights.locate(self.scroll + self.height as f64);
+        let buffer = (self.height as f64 * 0.5).min(256.);
+        let desired_start = (self.scroll - buffer).max(0.);
+        let desired_end = self.scroll + self.height as f64 + buffer;
+        // Coverage stops at uncached blocks and window edges so translation cannot expose unshaped rows.
+        let mut first = self.heights.locate(self.scroll);
+        let mut last = self.heights.locate(self.scroll + self.height as f64);
+        while first > 0
+            && self.heights.prefix(first) + 16. > desired_start
+            && self.blocks.contains_key(&(first - 1))
+        {
+            first -= 1;
+        }
+        while last + 1 < self.text.len_lines()
+            && self.heights.prefix(last + 1) + 16. < desired_end
+            && self.blocks.contains_key(&(last + 1))
+        {
+            last += 1;
+        }
+        let mut coverage_start = if first == 0 {
+            0.
+        } else {
+            self.heights.prefix(first) + 16.
+        };
+        let mut coverage_end = self.heights.prefix(last + 1) + 16.;
+        if last + 1 == self.text.len_lines() {
+            coverage_end += 16.;
+        }
+        if let Some(block) = self.blocks.get(&first) {
+            if let Some((row, _)) = block.fast_window {
+                if row > 0 {
+                    coverage_start = coverage_start.max(
+                        self.heights.prefix(first) + 16. + row as f64 * self.line_height as f64,
+                    );
+                }
+            }
+        }
+        if let Some(block) = self.blocks.get(&last) {
+            if let Some((_, end)) = block.fast_window {
+                if end < (block.height / self.line_height).ceil() as usize {
+                    coverage_end = coverage_end.min(
+                        self.heights.prefix(last) + 16. + end as f64 * self.line_height as f64,
+                    );
+                }
+            }
+        }
+        coverage_start = coverage_start.max(desired_start).min(self.scroll);
+        coverage_end = coverage_end
+            .min(desired_end)
+            .max(self.scroll + self.height as f64);
+        frame.scroll_min = coverage_start;
+        frame.scroll_max = (coverage_end - self.height as f64)
+            .max(self.scroll)
+            .min((frame.total_height - self.height as f64).max(0.));
+        let min_y = (coverage_start - self.scroll) as f32;
+        let max_y = (coverage_end - self.scroll) as f32;
         let selected = selection.range();
         let mut glyphs = vec![];
         for line in first..=last {
@@ -1119,8 +1176,7 @@ impl LayoutEngine {
             });
             if let Some(block) = self.blocks.get(&line) {
                 for rect in &block.backgrounds {
-                    if top + rect.bounds[1] < -self.line_height
-                        || top + rect.bounds[1] > self.height
+                    if top + rect.bounds[1] + rect.bounds[3] < min_y || top + rect.bounds[1] > max_y
                     {
                         continue;
                     }
@@ -1131,8 +1187,8 @@ impl LayoutEngine {
                 for cell in &block.cells {
                     if cell.start < selected.end
                         && cell.end > selected.start
-                        && top + cell.bounds[1] >= -self.line_height
-                        && top + cell.bounds[1] <= self.height
+                        && top + cell.bounds[1] + cell.bounds[3] >= min_y
+                        && top + cell.bounds[1] <= max_y
                     {
                         frame.rects.push(Rect::solid(
                             cell.bounds[0],
@@ -1144,7 +1200,7 @@ impl LayoutEngine {
                     }
                 }
                 for g in &block.glyphs {
-                    if top + g.y >= -self.line_height && top + g.y < self.height + self.line_height
+                    if top + g.y >= min_y - self.line_height && top + g.y < max_y + self.line_height
                     {
                         glyphs.push((g.key, g.x, g.y + top, g.color));
                     }
@@ -1173,8 +1229,8 @@ impl LayoutEngine {
         frame.navigation = self.navigation_map(
             first.saturating_sub(1),
             (last + 1).min(self.text.len_lines() - 1),
-            -3. * self.line_height,
-            self.height + 3. * self.line_height,
+            min_y - 3. * self.line_height,
+            max_y + 3. * self.line_height,
         );
         self.packed_navigation = frame
             .navigation

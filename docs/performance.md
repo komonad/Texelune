@@ -18,6 +18,10 @@ The default LSP synchronization ceiling is 2MiB, independent of editor size. Cro
 
 Line transforms above 8192 scalars use a short-lived Worker. The main thread transfers rope slices of at most 4096 scalars and yields around 1.5ms intervals; Worker completion applies one version- and selection-checked transaction. Large copy/cut operations stream text into an asynchronous clipboard payload. Edits, selection changes, document replacement, reconfiguration, disposal and command deadlines cancel preparation; cut deletes text only after a successful clipboard write. Atomic document replacement work and callbacks still run on the main thread and scale with the modified range.
 
+## Scroll coverage
+
+Scene geometry includes up to 256 CSS pixels of cached content above and below the viewport, limited to half the viewport per side. Long-line windows publish their smaller available coverage. A scroll redraw clamps translation to complete resident coverage until a matching target scene arrives. `scroll` exposes the requested position; `renderedScroll` exposes the position used for pixels and hit testing. Scrollbar input remains immediate during asynchronous layout. Overscan adds bounded geometry and raster work independently of document size.
+
 ## Brackets and completion
 
 Bracket matching reads at most 1,024 scalars per slice and yields after approximately 1ms of work. The lexical scan has an 8-second default deadline and cancels on edits, selection changes, document replacement or configuration changes. Nesting is bounded to 65,536 endpoints. Matching does not request a full document string. Custom syntax-aware providers share the deadline and cancellation contract.

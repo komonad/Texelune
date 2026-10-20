@@ -70,7 +70,7 @@ export interface OverlayHandle { readonly element: HTMLDivElement; update(option
 export interface CaretHit { x: number; y: number; h: number; offset: number; cluster: number; trailing: boolean; }
 export interface VisualCell extends TextRange { bounds: RGBA; rtl: boolean; }
 export interface Frame {
-  version: number | bigint; request: number; scroll: number; total_height: number;
+  version: number | bigint; request: number; scroll: number; scroll_min: number; scroll_max: number; total_height: number;
   visible_ready: boolean; pending: number; cached_blocks: number; quad_count: number;
   document_bytes: number; document_chars: number; document_lines: number;
   layout_ms: number; longest_job_ms: number; raster_ms: number; scene_ms: number;
@@ -135,6 +135,7 @@ export interface EditorAPI {
   goToDiagnostic(direction?: 1 | -1): Readonly<EditorDiagnostic> | null;
   reveal(offset?: number): void;
   readonly scroll: number;
+  readonly renderedScroll: number;
   positionAt(offset: number): Position;
   offsetAt(position: Position): number;
   focus(): void;

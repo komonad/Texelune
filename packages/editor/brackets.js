@@ -68,7 +68,7 @@ export class BracketController {
     void this.find(s.head).then(match=>{if(serial===this.serial){this.match=match;this.render();}}).catch(error=>{if(serial===this.serial&&error.name!=='AbortError')this.report('brackets',error);});
   }
   render(){
-    const api=this.api,frame=api.frame,delta=api.scroll-(frame?.scroll??api.scroll),boxes=[];
+    const api=this.api,frame=api.frame,delta=api.renderedScroll-(frame?.scroll??api.renderedScroll),boxes=[];
     if(this.drawnFrame===frame&&this.drawnMatch===this.match&&this.drawnDelta===delta&&this.drawnVersion===api.version)return;
     this.drawnFrame=frame;this.drawnMatch=this.match;this.drawnDelta=delta;this.drawnVersion=api.version;
     if(this.match&&Number(frame?.version)===api.version)for(const cell of frame.navigation.cells){

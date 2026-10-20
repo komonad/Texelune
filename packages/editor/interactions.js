@@ -36,7 +36,7 @@ export class Interactions {
           this.target={targets,range};this.overlays.range=range;
           this.api.root.getElementById('viewport').classList.add('has-definition');
           this.show(targets.length===1?'Ctrl+单击跳转 · '+this.label(targets[0]):`Ctrl+单击 · ${targets.length} 个跳转目标`,offset);
-          this.overlays.update(this.api.frame?.navigation.cells??[],this.api.frame?this.api.scroll-this.api.frame.scroll:0);
+          this.overlays.update(this.api.frame?.navigation.cells??[],this.api.frame?this.api.renderedScroll-this.api.frame.scroll:0);
         }else if(result){
           const content=result instanceof Node?result:typeof result==='string'?result:result.contents;
           const text=content instanceof Node?content:plainContents(content);

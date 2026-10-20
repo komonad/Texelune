@@ -1,7 +1,7 @@
 import init, {Editor, Renderer, DocumentImport, VisualNavigation} from './pkg/texelune_editor.js';
 import {PerformanceStats,PerformancePanel,FrameTracker,liveFpsText,liveCostText} from './performance.js';
 import {prepareDocument} from './import.js';
-import {inspectableFrame,FrameStager} from './frame.js';
+import {inspectableFrame,FrameStager,sceneScroll} from './frame.js';
 import {BenchmarkRunner} from './benchmark.js';
 import {resolveTheme,applyThemeCSS} from './theme.js';
 import {scalarLength,indentInsertion,deadline} from './editing.js';
@@ -47,7 +47,8 @@ let api,interactions,diagnostics,editPending,wordSerial=0,wordPending=new Map(),
 let commands,completion,brackets;
 const mac=/Mac|iPhone|iPad/.test(navigator.platform);
 let keybindingOptions={...options.keybindings},keybinding=compileKeybindings(keybindingOptions,mac);
-const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(scroll-(latest?.scroll??scroll));return y+c.h>0&&y<height?{...c,y}:null;});
+function renderedScroll(){return sceneScroll(latest,scroll);}
+const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(renderedScroll()-(latest?.scroll??0));return y+c.h>0&&y<height?{...c,y}:null;});
 function reportProvider(kind,error){emit('providererror',{kind,error});}
 function cancelEdit(){editPending?.abort();editPending=null;commands?.cancel();}
 function cancelWords(){for(const read of wordReads)read.abort();wordReads.clear();for(const pending of [...wordPending.values()])pending.reject();}
@@ -118,7 +119,7 @@ const benchmarkRunner=new BenchmarkRunner({
     renderer.upload(frame.instances);const nav=VisualNavigation.from_packed(frame.packed_navigation);nav.free();
     renderer.draw_offscreen(width,height,0);
   },
-  draw(){renderer.draw_offscreen(width,height,latest?scroll-latest.scroll:0);return latest?.quad_count??0;},
+  draw(){renderer.draw_offscreen(width,height,latest?renderedScroll()-latest.scroll:0);return latest?.quad_count??0;},
   restore(){if(ready&&latest)renderer.upload(latest.instances);dirty=true;},
   onState(state){
     if(state.report){Object.assign(state.report,{adapter:renderer.adapter_name()||adapterLabel,width:canvas.width,height:canvas.height,bytes:editor.bytes(),font_size:fontSize});performanceStats.setBenchmark(state.report);lastMetrics=0;}
@@ -255,15 +256,15 @@ function setScroll(value){
 function caret(){
   if(!visual||!latest||Number(latest.version)!==version())return null;
   const hit=visual.resolve(currentSelection().head,affinity);
-  return hit?{...hit,y:hit.y-(scroll-latest.scroll)}:null;
+  return hit?{...hit,y:hit.y-(renderedScroll()-latest.scroll)}:null;
 }
 function hitAt(x,y){
   if(!visual||!latest||Number(latest.version)!==version())return null;
-  const hit=visual?.hit_test(x,y+(scroll-(latest?.scroll??scroll)));return hit?{...hit,y:hit.y-(scroll-latest.scroll)}:null;
+  const delta=renderedScroll()-(latest?.scroll??0),hit=visual?.hit_test(x,y+delta);return hit?{...hit,y:hit.y-delta}:null;
 }
 function ensureCaret(){
   const c=caret();if(!c)return;
-  if(c.y<0)setScroll(scroll+c.y-16);else if(c.y+c.h>height)setScroll(scroll+c.y+c.h-height+16);
+  if(c.y<0)setScroll(renderedScroll()+c.y-16);else if(c.y+c.h>height)setScroll(renderedScroll()+c.y+c.h-height+16);
 }
 function deferBoundary(forward,action,extend=false){
   if(!navigation)startNavigation();
@@ -366,7 +367,7 @@ function positionInput(){
 function updateChrome(){
   if(!latest)return;
   chromeScroll=scroll;
-  const delta=scroll-latest.scroll;
+  const delta=renderedScroll()-latest.scroll;
   const labels=latest.labels.filter(l=>l.y-delta>-28&&l.y-delta<height);
   $('numbers').replaceChildren(...labels.map(l=>{const el=document.createElement('span');el.textContent=l.line;el.style.top=`${l.y-delta}px`;return el;}));
   const total=Math.max(height,latest.total_height),track=height,thumb=Math.max(36,track*height/total);
@@ -404,7 +405,7 @@ function loop(time){
       const renderStart=performance.now();
       const showCaret=!!c&&blink&&s.head===s.anchor&&root.activeElement===input;
       if(pendingLiveUpdate||time-lastGpuRequest>250){renderer.request_sample();lastGpuRequest=time;}
-      if(renderer.draw(width,height,latest?scroll-latest.scroll:0,c?.x||66,c?.y||16,showCaret)){
+      if(renderer.draw(width,height,latest?renderedScroll()-latest.scroll:0,c?.x||66,c?.y||16,showCaret)){
         drew=true;
         performanceStats.record('render',performance.now()-renderStart);performanceStats.draw(performance.now());lastDrawCalls=(latest?.quad_count?1:0)+(showCaret?1:0);
         const rendererEpoch=rendererGeneration,sampleEpoch=performanceStats.epoch,hadScene=!!latest;
@@ -672,6 +673,7 @@ async function boot(){
       goToDiagnostic,
       reveal(offset=currentSelection().head){post({type:'reveal',offset:Math.max(0,Math.min(editor.length(),offset))});},
       get scroll(){return scroll;},
+      get renderedScroll(){return renderedScroll();},
       toggle(attribute){applyToggle(attribute);},
       format(style){applyStyle(style);},
       undo(){const change=editor.undo();commit(change);return !!change;},

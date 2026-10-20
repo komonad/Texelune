@@ -103,6 +103,8 @@ Display cadence and offscreen throughput do not establish an editing latency SLO
 
 ## Browser regression
 
+The scroll coverage scenario holds layout-frame delivery while scrolling within the prefetched scene, jumping beyond it and reversing direction. It checks complete row coverage, visible glyph geometry, pointer hit testing, diagnostic alignment and overlay placement. The same checks pass on a 16MiB wrapped ASCII line and a 100MiB mixed document. Releasing held frames commits the requested viewport. A separate 120-step distinct-CJK-glyph scenario exercises atlas replacement and verifies that a second request for the same viewport adds no missing glyphs.
+
 The bracket/completion scenario covers ASCII and fullwidth pairing, grouped undo/redo, committed composition, custom astral endpoints, shared indentation definitions, BiDi match geometry, edit interception and cancellation across document replacement. Closing-bracket traversal preserves combining graphemes, including a 20,000-mark cluster resolved by the navigation Worker. A 100MiB unmatched bracket query yields to the event loop and cancels without constructing a full document string.
 
 Completion refresh is observed with a retained DOM reference, removal observer and visibility sampling through typing, Backspace and a delayed provider. Resident candidates accept against mapped current replacement ranges before the next response. The scenario detects no popup replacement or hidden interval. Native rust-analyzer completion, static TypeScript Worker completion, viewport-edge placement, keyboard and mouse acceptance also pass.

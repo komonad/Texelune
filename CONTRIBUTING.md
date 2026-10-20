@@ -40,6 +40,8 @@ npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filena
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/definition-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/component-lsp-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/scroll-check.js
+npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/scroll-coverage-check.js
+npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/atlas-scroll-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/large-edit-check.js
 ```
 

@@ -16,6 +16,8 @@
 
 The layout Worker owns a rope replica, font system, paragraph cache, height index, scheduler and glyph atlas. Viewport requests have independent sequence numbers. Only complete visible layouts with matching document versions and viewport requests replace the scene. `FrameStager` retains ordered atlas patches from intermediate frames; texture writes and geometry upload commit together. Incomplete layouts and new atlas generations leave the resident GPU scene intact until a replacement is ready.
 
+Each scene includes up to half a viewport, capped at 256 CSS pixels, of geometry on either side when contiguous cached blocks are available. Its `scroll_min/scroll_max` bounds account for paragraph and long-line window coverage. The requested scroll and rendered scroll remain separate until replacement. GPU translation, navigation hit testing, caret geometry, gutter labels and DOM overlays share the rendered scroll. Moving beyond cached coverage retains a complete resident image while the Worker prepares the target.
+
 Cosmic Text performs paragraph shaping and BiDi layout; Swash rasterizes glyphs. WebGPU draws instanced quads. Transferable `Float32Array` / `Uint32Array` buffers carry geometry and navigation; debug object views decode them lazily.
 
 The height index retains measured heights as estimates across invalidation. Logical-line edits splice its entries. Height refinement preserves a document anchor and schedules newly uncovered viewport blocks.

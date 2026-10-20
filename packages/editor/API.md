@@ -29,7 +29,7 @@ editor.destroy();
 - `positionAt(offset)` / `offsetAt({line, character})` 使用从零开始的逻辑行和 UTF-16 列，适合 LSP。小字符串可用 `[...prefix].length` 将 JS 前缀转换为 scalar 数。
 - `lineRange(line)` 包含换行符。末尾空行可以是空范围。软折行不创建逻辑行。
 - 文本、格式、撤销、重做使 `version` 递增；`load()` 替换文档并从版本零开始。异步任务还应保存宿主文档身份，不能只比较版本零。
-- `frame` / `caret` 的几何采用视口 CSS 像素；`scroll` / `scrollTo(y)` 采用文档纵向 CSS 像素。
+- `frame` / `caret` 的几何采用视口 CSS 像素；`scroll` / `scrollTo(y)` 采用文档纵向 CSS 像素。`scroll` 是请求位置，`renderedScroll` 是当前实际绘制位置；布局未完成时两者可以不同。
 
 ## 文档操作
 
@@ -45,12 +45,15 @@ editor.destroy();
 | `executeCommand(command)` | 执行内置编辑命令，返回 `Promise<boolean>`。 |
 | `format(style)`, `toggle(attribute)` | 设置完整样式，或切换 bold/italic/underline 并保留其他项。 |
 | `reveal(offset?)`, `focus()` | 最小幅度将目标滚入视口；默认当前光标。聚焦不触发浏览器页面滚动。 |
+| `scroll`, `renderedScroll`, `scrollTo(y)` | 请求位置、实际绘制位置，以及设置请求位置。小幅滚动复用场景缓冲，大幅跳转等待完整目标场景。 |
 | `load(text,filename?)` | 替换文档、清空历史、文档装饰、inlay 和 overlay。 |
 | `loadSynthetic(bytes?,singleLine?)` | 异步生成 UTF-8 压力文档，默认 100MiB，导入可取消。 |
 
 `EditRequest` 为 `{start,end,text,source?,caretOffset?}`。`caretOffset` 相对插入起点，单位为 scalar。`applyEdit` 的版本检查仅限当前文档；文档替换后应同时验证宿主文档 ID。
 
 `format` 使用 `{bold,italic,underline,foreground,background}`，颜色为 `[r,g,b,a]`，通道 0–1，`null` 清除颜色。未提供的布尔值取 `false`，颜色取 `null`；这是完整样式设置，不是局部补丁。
+
+`frame.scroll` 是场景几何的原点，`frame.scroll_min/scroll_max` 是该场景能完整覆盖的纵向滚动范围。`frame.navigation` 与场景几何使用这个原点；将它们映射到当前画面时，纵向减去 `renderedScroll - frame.scroll`。组件的 `caret`、鼠标命中、行号、诊断和悬浮层已经应用此偏移。新帧到达前，实际位置限制在完整覆盖范围内；滚动条仍跟随请求位置，目标场景就绪后一起切换。
 
 ## 扩展配置与编辑回调
 

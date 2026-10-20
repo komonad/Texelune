@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {FrameStager} from '../../packages/editor/frame.js';
+import {FrameStager,sceneScroll} from '../../packages/editor/frame.js';
+
+test('resident geometry scrolls only inside its complete coverage until replacement arrives',()=>{
+  const frame={scroll:1000,scroll_min:800,scroll_max:1256};
+  assert.equal(sceneScroll(frame,1100),1100);
+  assert.equal(sceneScroll(frame,9000),1256);
+  assert.equal(sceneScroll(frame,0),800);
+  assert.equal(sceneScroll({...frame,scroll:9000,scroll_min:8744,scroll_max:9256},9000),9000);
+  assert.equal(sceneScroll({scroll:40},9000),40);
+  assert.equal(sceneScroll(null,9000),0);
+});
 
 test('partial frames retain atlas writes until a complete scene can replace the resident one',()=>{
   const frames=new FrameStager(),first={atlas_epoch:0,visible_ready:true,patches:['a']};

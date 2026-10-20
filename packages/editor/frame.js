@@ -16,6 +16,13 @@ export class FrameStager {
   }
 }
 
+export function sceneScroll(frame,requested){
+  if(!frame)return 0;
+  const min=Number.isFinite(frame.scroll_min)?Math.min(frame.scroll_min,frame.scroll):frame.scroll;
+  const max=Number.isFinite(frame.scroll_max)?Math.max(frame.scroll_max,frame.scroll):frame.scroll;
+  return Math.max(min,Math.min(max,requested));
+}
+
 export function decodeNavigation(words){
   const floats=new Float32Array(words.buffer,words.byteOffset,words.length),cells=[],hits=[],rows=[];
   let p=4;
