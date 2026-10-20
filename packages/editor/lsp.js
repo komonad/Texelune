@@ -12,7 +12,7 @@ export class LspClient extends EventTarget {
   async connect(){
     this.disconnect();
     if(this.editor.documentInfo.bytes>this.options.maxDocumentBytes){this.status('paused','文档超过 LSP 同步上限，编辑与布局继续运行');return;}
-    this.status('connecting','连接 rust-analyzer…');
+    this.status('connecting',this.options.workerUrl?'启动语言服务 Worker…':'连接语言服务…');
     this.worker=new Worker(new URL('./lsp-worker.js',import.meta.url),{type:'module'});
     this.worker.onmessage=({data:m})=>this.receive(m);
     this.worker.onerror=event=>{this.status('error',event.message);this.connectPending?.reject(new Error(event.message));this.rejectPending();};

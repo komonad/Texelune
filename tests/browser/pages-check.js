@@ -1,0 +1,53 @@
+async page=>{
+  const assert=(value,message)=>{if(!value)throw new Error(message);};
+  const failures=[],backend=[];
+  page.on('pageerror',error=>failures.push(error.message));
+  page.on('response',response=>{if(response.status()>=400)failures.push(`${response.status()} ${response.url()}`);});
+  page.on('request',request=>{if(/\/(api|lsp)(\/|\?|$)/.test(new URL(request.url()).pathname))backend.push(request.url());});
+  const stable=()=>page.waitForFunction(()=>window.texelune?.frame?.visible_ready&&window.texelune.frame.pending===0&&Number(window.texelune.frame.version)===window.texelune.version,null,{timeout:30000});
+  await page.goto('http://127.0.0.1:4176/pages/');
+  await stable();
+  await page.waitForFunction(()=>window.studio?.lsp.state==='ready'&&document.getElementById('highlight-source').textContent.includes('tokens'),null,{timeout:30000});
+  assert(await page.evaluate(()=>!!window.studio.lsp.worker&&!!window.studio.lsp.options.workerUrl),'static boot starts a language Worker');
+  assert(await page.locator('#connection-label').innerText()==='TypeScript Worker','Worker language service is identified');
+  const hover=await page.evaluate(()=>window.studio.lsp.hover([...window.texelune.text.slice(0,window.texelune.text.lastIndexOf('describe(')+2)].length));
+  assert(hover?.contents?.value.includes('describe'),'real TypeScript hover works');
+  const targets=await page.evaluate(()=>window.studio.lsp.definition([...window.texelune.text.slice(0,window.texelune.text.lastIndexOf('describe(')+2)].length));
+  const expectedDefinition=await page.evaluate(()=>[...window.texelune.text.slice(0,window.texelune.text.indexOf('describe'))].length);
+  assert(targets.some(target=>target.start===expectedDefinition),'definition resolves to its declaration');
+  await page.evaluate(()=>{window.__tokens=[];window.studio.lsp.addEventListener('tokens',({detail})=>window.__tokens.push(detail));});
+  const version=await page.evaluate(()=>window.texelune.version);
+  await page.selectOption('#theme-preset','dusk');await stable();
+  await page.waitForFunction(()=>window.__tokens.some(event=>event.theme==='Dusk'));
+  assert(await page.evaluate(()=>window.texelune.theme.name==='Dusk'),'theme switching works');
+  assert(await page.evaluate(()=>window.texelune.version)===version,'theme switching does not edit the document');
+  await page.evaluate(()=>{window.texelune.select(0,0);window.texelune.insert('// static edit 👩🏽‍💻\n');});await stable();
+  assert(await page.evaluate(()=>window.texelune.text.startsWith('// static edit 👩🏽‍💻\n')),'editing works');
+  await page.waitForFunction(()=>window.__tokens.some(event=>event.appliedVersion===window.texelune.version));
+  await page.evaluate(()=>window.texelune.load('const count: number = "wrong";\nconst greeting = "hi";\ngreet','main.ts'));await stable();
+  await page.waitForFunction(()=>window.studio.diagnostics.some(item=>item.code===2322));
+  const completions=await page.evaluate(()=>window.studio.lsp.complete([...window.texelune.text].length));
+  assert(completions.some(item=>item.label==='greeting'&&item.end-item.start===5),'completion replaces the typed prefix');
+  const timeout=await page.evaluate(async()=>{
+    const {LspClient}=await import('../packages/editor/lsp.js');
+    const workerUrl=URL.createObjectURL(new Blob([`self.onmessage=({data:m})=>{if(m.method==='initialize')postMessage({jsonrpc:'2.0',id:m.id,result:{capabilities:{positionEncoding:'utf-16',textDocumentSync:2,hoverProvider:true}}});};`],{type:'text/javascript'}));
+    const client=new LspClient(window.texelune,{workerUrl,workerType:'classic',rootUri:'file:///texelune-demo',uri:'file:///texelune-demo/main.ts',timeout:60});
+    let animationFrames=0,running=true;function tick(){animationFrames++;if(running)requestAnimationFrame(tick);}requestAnimationFrame(tick);
+    try{await client.connect();const start=performance.now();let rejected=false;try{await client.hover(0);}catch{rejected=true;}return{rejected,elapsed:performance.now()-start,closed:!client.worker,state:client.state,animationFrames};}
+    finally{running=false;client.dispose();URL.revokeObjectURL(workerUrl);}
+  });
+  assert(timeout.rejected&&timeout.closed&&timeout.state==='error'&&timeout.elapsed<3000&&timeout.animationFrames>0,'unresponsive Worker has a deadline and is released without blocking animation');
+  await page.locator('[data-sample="unicode"]').click();await stable();
+  assert(await page.evaluate(()=>window.texelune.text.includes('👨‍👩‍👧‍👦')),'Unicode sample loads');
+  await page.locator('[data-sample="bidi"]').click();await stable();
+  assert(await page.evaluate(()=>window.texelune.text.includes('العربية')),'BiDi sample loads');
+  await page.locator('#large-100mb').click();
+  await page.waitForFunction(()=>window.texelune.documentInfo.bytes===100*1048576,null,{timeout:60000});await stable();
+  await page.evaluate(()=>{window.texelune.select(0,0);window.texelune.insert('x');});await stable();
+  assert(await page.evaluate(()=>window.texelune.documentInfo.bytes===100*1048576+1),'100 MiB document remains editable');
+  await page.getByRole('link',{name:'查看双实例接入示例 ↗'}).click();
+  await page.waitForFunction(()=>window.editors?.length===2&&window.editors.every(editor=>editor.frame?.visible_ready),null,{timeout:30000});
+  assert(backend.length===0,'static pages do not request server endpoints: '+backend.join(', '));
+  assert(failures.length===0,'static pages load without errors: '+failures.join(', '));
+  console.log('Pages subpath, Worker LSP, semantic highlighting, diagnostics, hover, definitions, completion, themes, editing, Unicode/BiDi, 100 MiB and two instances passed.');
+}

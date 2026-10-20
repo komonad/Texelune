@@ -213,6 +213,18 @@ language.dispose();
 
 `attach()` 安装 hover/definition provider。取消绑定只恢复仍由本次绑定拥有的项，不覆盖后来配置的 provider；`dispose()` 也撤销绑定。`hover/definition/complete(offset?,{signal}?)` 支持取消，拒绝文档变化后的结果。`connect/disconnect/refresh` 管理连接。事件 `status/connected/diagnostics/tokens/timing` 在 `lsp.d.ts` 中定义。
 
+`LspOptions` 支持 `url?:string`、`workerUrl?:string`、`workerType?:'module'|'classic'`。至少提供一种传输地址；`workerUrl` 优先于 `url`。Worker 通过 `postMessage` 收发 JSON-RPC 对象，使用 LSP UTF-16 坐标，不使用字符串编码或 Content-Length 帧。Worker 默认采用 module 模式。
+
+```ts
+const language = new LspClient(editor, {
+  workerUrl: new URL('./language-server.js', import.meta.url).href,
+  workerType: 'module', rootUri: 'file:///workspace/',
+  uri: 'file:///workspace/main.ts', languageId: 'typescript',
+});
+```
+
+适配器拥有服务 Worker 的生命周期。`disconnect()`、`dispose()`、文档超过同步上限时释放 Worker；Worker RPC 超时会结束服务并发出 `error` 状态，再次 `connect()` 可重启。`timeout` 控制普通 RPC 截止时间，默认 10000 ms；初始化上限 20000 ms，公开连接上限 25000 ms。取消请求发送 `$/cancelRequest`，无法合作取消的同步分析可由超时终止。
+
 定义查询支持 LSP `Location` 与 `LocationLink`：同文档目标转为 scalar `start/end`，跨文件保留 URI 与 UTF-16 范围。切换外部文档时先更新 `language.options.uri`，再调用 `editor.load()`。
 
 默认 LSP 同步上限 2MiB；超过上限暂停语言服务，编辑继续。语义批次使用独立读快照与版本映射；交互查询等待同步读屏障，支持超时与 `$/cancelRequest`。示例 Studio 支持工作区内跨文件跳转；服务器只读取规范化路径仍在示例工作区且不超过 2MiB 的文本文件。

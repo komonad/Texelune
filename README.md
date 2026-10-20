@@ -6,6 +6,8 @@ Rust owns the document, editing transactions, Unicode navigation, text layout an
 
 Status: experimental, pre-1.0. The component is a private workspace distributed from this repository or a locally packed archive.
 
+[Live demo](https://komonad.github.io/Texelune/). TypeScript language analysis runs in a browser Worker; the local demo connects to rust-analyzer.
+
 ![Texelune editor](docs/images/editor.png)
 
 ## Features

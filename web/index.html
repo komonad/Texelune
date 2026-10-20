@@ -5,7 +5,7 @@
   <aside class="sidebar">
     <a class="brand" href="./"><span class="logo">t</span> texelune <span class="tag">STUDIO</span></a>
     <p class="section-label">工作区</p>
-    <button class="file active" data-sample="rust"><span class="file-icon">rs</span><span>main.rs<small>Rust · LSP</small></span><span class="file-dot"></span></button>
+    <button class="file active" data-sample="code"><span class="file-icon" id="code-file-icon">rs</span><span><span id="code-file-name">main.rs</span><small id="code-file-language">Rust · LSP</small></span><span class="file-dot"></span></button>
     <button class="file" data-sample="unicode"><span class="file-icon">文</span><span>unicode.txt<small>Grapheme / Unicode</small></span></button>
     <button class="file" data-sample="bidi"><span class="file-icon">⇄</span><span>bidirectional.txt<small>RTL / BiDi</small></span></button>
     <p class="section-label spaced">压力测试</p>
@@ -30,7 +30,7 @@
           <div class="json-heading"><label for="theme-json">主题 JSON</label><button id="reset-theme">恢复默认</button></div><textarea id="theme-json" spellcheck="false" aria-label="主题 JSON"></textarea><button class="primary" id="apply-theme">应用主题</button><p class="feedback" id="theme-feedback" role="status">颜色变化会直接应用到语义 token。</p>
         </section>
         <section id="panel-problems" class="inspector-panel" hidden><div class="panel-heading"><h2>文档诊断</h2><button id="refresh-lsp">刷新</button></div><p class="muted">点击诊断定位到文档。</p><div id="diagnostics" role="list"><p class="empty">等待语言服务。</p></div></section>
-        <section id="panel-inspect" class="inspector-panel" hidden><div class="panel-heading"><h2>语言服务</h2><span class="pill">LSP</span></div><dl class="service-facts"><dt>服务端</dt><dd>rust-analyzer</dd><dt>传输</dt><dd>WebSocket / stdio</dd><dt>位置编码</dt><dd>UTF-16 ↔ Unicode scalar</dd><dt>文档同步</dt><dd>增量，30 ms 合并</dd><dt>语义更新</dt><dd>120 ms 防抖 / 过期丢弃</dd></dl><div class="service-buttons"><button id="hover-request">查看光标处类型</button><button id="completion-request">补全 · Ctrl+Space</button></div><pre id="hover-result">移动光标可查看符号信息。</pre><div id="completions"></div><p class="muted">大于 2 MiB 的文档暂停语言服务同步。编辑器仍独立处理布局、滚动和输入。</p></section>
+        <section id="panel-inspect" class="inspector-panel" hidden><div class="panel-heading"><h2>语言服务</h2><span class="pill">LSP</span></div><dl class="service-facts"><dt>服务端</dt><dd id="server-name">rust-analyzer</dd><dt>传输</dt><dd id="server-transport">WebSocket / stdio</dd><dt>位置编码</dt><dd>UTF-16 ↔ Unicode scalar</dd><dt>文档同步</dt><dd>增量，30 ms 合并</dd><dt>语义更新</dt><dd>120 ms 防抖 / 版本映射</dd></dl><div class="service-buttons"><button id="hover-request">查看光标处类型</button><button id="completion-request">补全 · Ctrl+Space</button></div><pre id="hover-result">移动光标可查看符号信息。</pre><div id="completions"></div><p class="muted">大于 2 MiB 的文档暂停语言服务同步。编辑器仍独立处理布局、滚动和输入。</p></section>
       </aside>
     </div>
     <footer><span id="app-status" role="status">启动编辑器…</span><span>Alt+P 性能面板 · Alt+Enter 全屏</span></footer>

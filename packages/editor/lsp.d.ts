@@ -1,5 +1,5 @@
 import type {EditorAPI,NavigationTarget,HoverResult} from './index.js';
-export interface LspOptions { url: string; rootUri: string; uri: string; languageId?: string; maxDocumentBytes?: number; timeout?: number; }
+export interface LspOptions { url?: string; workerUrl?: string; workerType?: 'module' | 'classic'; rootUri: string; uri: string; languageId?: string; maxDocumentBytes?: number; timeout?: number; }
 export interface Completion { label: string; detail: string; text: string; start: number; end: number; additionalEdits: boolean; snippet: boolean; }
 export interface Diagnostic { range: import('./index.js').LspRange; start: number; end: number; message: string; severity?: number; source?: string; code?: string | number; }
 export interface LspEvents {

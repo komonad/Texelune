@@ -61,7 +61,19 @@ const completions = await language.complete();
 language.dispose();
 ```
 
-The adapter uses a dedicated Worker for WebSocket JSON-RPC, a Rust rope replica, UTF-16 positions and semantic token processing. It negotiates the semantic-token legend, UTF-16 encoding and document synchronization mode. Incremental changes are grouped after 30ms; servers requiring full synchronization receive snapshots from the Worker. Semantic and pull diagnostic requests use a 120ms debounce; push diagnostics are also supported. RPC requests time out after 10s, initialization after 20s, and the public connection attempt after 25s.
+The adapter uses a dedicated Worker for JSON-RPC, a Rust rope replica, UTF-16 positions and semantic token processing. It negotiates the semantic-token legend, UTF-16 encoding and document synchronization mode. Incremental changes are grouped after 30ms; servers requiring full synchronization receive snapshots from the Worker. Semantic and pull diagnostic requests use a 120ms debounce; push diagnostics are also supported. RPC requests time out after 10s, initialization after 20s, and the public connection attempt after 25s.
+
+Use `url` for WebSocket transport, or `workerUrl` for a browser language server:
+
+```js
+const language = new LspClient(editor, {
+  workerUrl: new URL('./language-server.js', import.meta.url).href,
+  workerType: 'module',
+  rootUri: 'file:///workspace/', uri: 'file:///workspace/main.ts', languageId: 'typescript',
+});
+```
+
+`workerUrl` takes precedence over `url`. The adapter owns the server Worker and exchanges JSON-RPC objects through `postMessage`; no Content-Length framing or JSON string encoding is used. `workerType` defaults to `'module'`; classic Workers can use `'classic'`. The server must implement LSP initialization and UTF-16 positions. Cancellation sends `$/cancelRequest`. A Worker RPC timeout terminates the server and reports an error; `connect()` starts a fresh session. Disconnecting, disposing, or exceeding the document limit releases the adapter and server Workers. The Pages demo includes a TypeScript implementation under `web/`.
 
 Each semantic request owns an immutable rope snapshot and its read version. Because semantic-token responses omit a document version, a read barrier holds outgoing `didChange` notifications until the response or timeout. Local document edits, layout and rendering remain independent. The response's UTF-16 positions are decoded against its snapshot, never against the current replica. The layout Worker then rebases scalar ranges through its ordered edit history. At most one semantic request is active; intervening edits request one follow-up analysis and do not cancel the active read. The barrier releases buffered writes on response, timeout or document replacement. Interactive queries wait for this synchronization point and retain strict document-version checks.
 

@@ -1,6 +1,13 @@
 import {createEditor, type EditorAPI, type IndentContext, type TextRange} from '../packages/editor/index.js';
 import {LspClient} from '../packages/editor/lsp.js';
 
+export function workerLanguage(editor: EditorAPI, workerUrl: string) {
+  return new LspClient(editor, {
+    workerUrl, workerType: 'module', rootUri: 'file:///workspace/',
+    uri: 'file:///workspace/main.ts', languageId: 'typescript', timeout: 10000,
+  });
+}
+
 export async function mount(container: HTMLElement, workspace: {rootUri: string; uri: string; text: string}) {
   const editor: EditorAPI = await createEditor(container, {
     value: workspace.text, filename: 'main.rs', autoIndent: 'brackets', indentUnit: '  ',

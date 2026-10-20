@@ -21,4 +21,6 @@ GraphemeBreakTest 17.0.0 and BidiCharacterTest 16.0.0 fixtures are distributed u
 
 ## Dependencies
 
+The static Pages demo redistributes TypeScript Language Service 6.0.3 and its standard-library declarations under Apache License 2.0. `scripts/build-pages.mjs` includes upstream `LICENSE.txt` and `ThirdPartyNoticeText.txt` beside these assets under `web/vendor/typescript/`. The source dependency is pinned as `typescript-browser` in `package-lock.json`.
+
 Rust dependencies are recorded in `Cargo.toml` / `Cargo.lock`, including Ropey, Unicode Segmentation, Cosmic Text, Swash, wgpu and wasm-bindgen. JavaScript development dependencies are recorded in `package.json` / `package-lock.json`. Their upstream license terms apply independently of the project source license.

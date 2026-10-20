@@ -12,6 +12,24 @@ Build the repository with `npm ci` and `npm run build`. `npm run pack:editor` pr
 
 The component is browser ESM. It has no React/Vue peer dependency and no CommonJS or SSR implementation. Import the JavaScript entry only on the client; importing it evaluates the custom-element class and registration. `import type` is safe for server-compiled TypeScript.
 
+## GitHub Pages demo
+
+The [hosted demo](https://komonad.github.io/Texelune/) is built and deployed by `.github/workflows/pages.yml` on pushes to `main`. The workflow compiles WASM and uploads only the static site under `output/pages/`. All module, Worker, font and WASM URLs resolve under the project path.
+
+To generate the same site locally:
+
+```sh
+npm run build
+npm run build:pages
+python -m http.server 4176 --directory output
+```
+
+Open `http://127.0.0.1:4176/pages/`. `tests/browser/pages-check.js` exercises this subpath deployment with the Playwright CLI, including Worker language analysis, timeouts and large-text loading. The generated `web/config.js` selects the TypeScript workspace snapshot and Worker server. The source configuration uses the local Rust server endpoints.
+
+GitHub Pages serves the editor, themes, Unicode examples and stress fixtures. TypeScript Language Service 6.0.3 runs in a dedicated Worker behind a JSON-RPC/LSP adapter, providing semantic highlights, diagnostics, hover, definitions and completion. Its compiler and standard-library declarations are copied from the pinned `typescript-browser` npm alias into the site with their licenses; no CDN or backend connection is required. The demo analyzes one open document with the bundled standard libraries; external npm modules and project discovery are not provided.
+
+Rust analysis remains available through `npm run serve`, which runs the rust-analyzer WebSocket bridge. The native TypeScript compiler used for repository type checks is separate from the browser language-service dependency.
+
 ## Asset contract
 
 Preserve this relative layout when deploying the packed component:

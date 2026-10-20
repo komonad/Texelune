@@ -3,6 +3,7 @@ import {RpcConnection,decodeTokenData} from './rpc.js';
 import {resolveTheme,tokenStyle} from './theme.js';
 import {yieldTask} from './benchmark.js';
 import {sameDocumentUri} from './uris.js';
+import {openTransport} from './lsp-transport.js';
 
 let socket,rpc,mirror,options,theme,version=0,epoch=0,opened=false,initialized=false,provider=null;
 let pendingChanges=[],syncTimer=0,tokenTimer=0,tokenAbort=null,tokenBatch=null,decorationEpoch=0;
@@ -12,6 +13,11 @@ let diagnosticProvider=null,diagnosticAbort=null;
 let syncKind=2;
 const queries=new Map();
 const emit=(type,detail={})=>postMessage({type,epoch,version,...detail});
+function stopTimedOutWorker(error){
+  if(!options.workerUrl||error.name!=='TimeoutError')return false;
+  initialized=false;opened=false;rpc?.close();invalidate();socket?.close();
+  emit('status',{state:'error',message:'Language worker timed out; reconnect to restart it'});return true;
+}
 function flushChanges(){clearTimeout(syncTimer);if(!opened||!pendingChanges.length||readBarrier)return;if(syncKind!==0)rpc.notify('textDocument/didChange',{textDocument:{uri:options.uri,version},contentChanges:syncKind===1?[{text:mirror.text()}]:pendingChanges});pendingChanges=[];}
 function scheduleTokens(delay=120){clearTimeout(tokenTimer);tokenTimer=setTimeout(()=>{void refreshTokens();void refreshDiagnostics();},delay);}
 function invalidateQueries(){diagnosticAbort?.abort();for(const abort of queries.values())abort.abort();queries.clear();diagnosticAbort=null;}
@@ -27,7 +33,7 @@ async function refreshDiagnostics(){
   if(!opened||!diagnosticProvider)return;
   diagnosticAbort?.abort();const abort=diagnosticAbort=new AbortController(),revision=version,documentEpoch=epoch;
   try{await waitForRead(abort.signal);if(abort.signal.aborted||revision!==version||documentEpoch!==epoch)return;flushChanges();const report=await rpc.request('textDocument/diagnostic',{textDocument:{uri:options.uri},identifier:diagnosticProvider.identifier},{signal:abort.signal});if(!abort.signal.aborted&&revision===version&&documentEpoch===epoch&&report?.kind==='full')publishDiagnostics(report.items??[]);}
-  catch(error){if(error.name!=='AbortError'&&error.code!==-32801&&error.code!==-32802)emit('status',{state:'waiting',message:error.message});}
+  catch(error){if(opened&&documentEpoch===epoch&&!stopTimedOutWorker(error)&&error.name!=='AbortError'&&error.code!==-32801&&error.code!==-32802)emit('status',{state:'waiting',message:error.message});}
 }
 async function publishTokens(){
   if(!tokenBatch)return;
@@ -64,7 +70,7 @@ async function refreshTokens(){
     tokenBatch={version:revision,serial:job.serial,tokens:mapped};
     await publishTokens();
     if(documentEpoch===epoch)emit('timing',{sourceVersion:revision,elapsed:performance.now()-started});
-  }catch(error){if(error.name!=='AbortError'&&documentEpoch===epoch){emit('status',{state:'waiting',message:error.message});if(error.code===-32801||error.code===-32802)scheduleTokens(250);}}
+  }catch(error){if(opened&&error.name!=='AbortError'&&documentEpoch===epoch&&!stopTimedOutWorker(error)){emit('status',{state:'waiting',message:error.message});if(error.code===-32801||error.code===-32802)scheduleTokens(250);}}
   finally{snapshot.free();if(readBarrier===barrier){readBarrier=null;barrier.resolve();flushChanges();}if(semanticJob===job){semanticJob=null;tokenAbort=null;if(job.dirty||version!==revision)scheduleTokens(0);}}
 }
 function didOpen(){if(!initialized||!mirror)return;rpc.notify('textDocument/didOpen',{textDocument:{uri:options.uri,languageId:options.languageId??'rust',version,text:mirror.text()}});opened=true;pendingChanges=[];scheduleTokens(0);}
@@ -75,9 +81,8 @@ function openDocument(m){
 }
 async function connect(m){
   options=m.options;theme=resolveTheme(m.theme);await init();openDocument(m);for(const pending of early.splice(0))handle(pending);
-  socket=new WebSocket(options.url);
-  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.close();reject(new DOMException('LSP connection timed out','TimeoutError'));},10000);socket.onopen=()=>{clearTimeout(timer);resolve();};socket.onerror=()=>{clearTimeout(timer);reject(new Error('Cannot connect to language server'));};socket.onclose=()=>{clearTimeout(timer);reject(new Error('Language server disconnected'));};});
-  rpc=new RpcConnection(message=>socket.send(JSON.stringify(message)),{
+  socket=await openTransport(options,message=>{void rpc.receive(message);},()=>{rpc.close();initialized=false;opened=false;emit('status',{state:'disconnected',message:'LSP 连接已断开'});},error=>{rpc?.close();emit('status',{state:'error',message:error.message});});
+  rpc=new RpcConnection(message=>socket.send(message),{
     timeout:options.timeout??10000,
     onRequest:async(method,params)=>{
       if(method==='workspace/configuration')return(params.items??[]).map(()=>({checkOnSave:false,check:{enable:false},diagnostics:{enable:true},cargo:{buildScripts:{enable:false}},procMacro:{enable:false}}));
@@ -92,8 +97,6 @@ async function connect(m){
       if(method==='texelune/serverError')emit('status',{state:'error',message:params.message});
     }
   });
-  socket.onmessage=event=>{try{void rpc.receive(JSON.parse(event.data));}catch(error){emit('status',{state:'error',message:error.message});}};
-  socket.onclose=()=>{rpc.close();initialized=false;opened=false;emit('status',{state:'disconnected',message:'LSP 连接已断开'});};
   const result=await rpc.request('initialize',{
     processId:null,rootUri:options.rootUri,workspaceFolders:[{uri:options.rootUri,name:'code-workspace'}],clientInfo:{name:'texelune-web',version:'0.3.0'},
     capabilities:{experimental:{serverStatusNotification:true},general:{positionEncodings:['utf-16']},workspace:{diagnostics:{refreshSupport:true},configuration:true,workspaceFolders:true,semanticTokens:{refreshSupport:true}},textDocument:{definition:{linkSupport:true},diagnostic:{dynamicRegistration:false,relatedDocumentSupport:false},synchronization:{dynamicRegistration:false},hover:{contentFormat:['plaintext']},completion:{completionItem:{snippetSupport:false}},publishDiagnostics:{versionSupport:true},semanticTokens:{requests:{full:true,range:true},tokenTypes:['namespace','type','class','enum','interface','struct','typeParameter','parameter','variable','property','enumMember','event','function','method','macro','keyword','modifier','comment','string','number','regexp','operator','decorator'],tokenModifiers:['declaration','definition','readonly','static','deprecated','abstract','async','modification','documentation','defaultLibrary'],formats:['relative'],overlappingTokenSupport:false,multilineTokenSupport:false}}},
@@ -127,7 +130,7 @@ async function query(m){
       });
     }
     emit('reply',{id:m.id,result});
-  }catch(error){emit('reply',{id:m.id,error:error.message});}
+  }catch(error){if(!stopTimedOutWorker(error))emit('reply',{id:m.id,error:error.message});}
   finally{if(queries.get(m.method)===abort)queries.delete(m.method);}
 }
 const early=[];let booting=false;

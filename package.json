@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
     "serve": "cargo run --locked --release --bin serve",
     "test": "node --test tests/js/*.test.mjs",
     "test:metrics": "node --test tests/js/performance.test.mjs",
@@ -20,6 +21,7 @@
     "pack:editor": "node scripts/pack.mjs"
   },
   "devDependencies": {
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "typescript-browser": "npm:typescript@6.0.3"
   }
 }
