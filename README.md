@@ -6,7 +6,7 @@ Rust owns the document, editing transactions, Unicode navigation, text layout an
 
 Status: experimental, pre-1.0. The component is a private workspace distributed from this repository or a locally packed archive.
 
-![Texelune Studio](docs/images/studio.png)
+![Texelune editor](docs/images/editor.png)
 
 ## Features
 

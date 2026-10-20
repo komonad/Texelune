@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Texelune · Component</title><link rel="icon" href="data:,"><style>body{margin:30px;background:#f7f8fb;color:#344059;font:13px/1.8 "Segoe UI",sans-serif}a{color:#4773bf}h1{font-weight:500;font-size:23px}p{color:#8793a8}.editors{display:grid;grid-template-columns:1fr 1fr;gap:22px}.mount{height:570px;min-width:0}code{font:12px Consolas,monospace}pre{padding:18px;background:#fff;border:1px solid #e0e6ef;border-radius:6px;overflow:auto}@media(max-width:800px){.editors{grid-template-columns:1fr}}</style></head>
-<body><a href="./">← Code Studio</a><h1>一个组件，两个独立实例。</h1><p>同页共享 WASM 与模块，每个实例拥有独立文档、布局 Worker、渲染资源和主题。</p><div class="editors"><div class="mount" id="first"></div><div class="mount" id="second"></div></div><pre><code>import { createEditor } from 'texelune-editor';
+<body><a href="./">← 编辑器演示</a><h1>双实例示例</h1><p>同页共享 WASM 与模块，每个实例拥有独立文档、布局 Worker、渲染资源和主题。</p><div class="editors"><div class="mount" id="first"></div><div class="mount" id="second"></div></div><pre><code>import { createEditor } from 'texelune-editor';
 const editor = await createEditor(container, {
   value: 'fn main() {}', theme: 'paper', filename: 'main.rs'
 });
@@ -9,5 +9,5 @@ editor.setTheme('dusk');
 // Release workers, observers, event handlers and GPU resources.
 editor.destroy();</code></pre><script type="module">
 import {createEditor} from '../packages/editor/index.js';
-window.editors=await Promise.all([createEditor(document.getElementById('first'),{value:'fn main() {\n    let greeting = "你好 👩🏽‍💻";\n    println!("{greeting}");\n}',filename:'first.rs',theme:'paper'}),createEditor(document.getElementById('second'),{value:'Text lives in each document.\n\nשלום עולם · مرحبا بالعالم\n\n👨‍👩‍👧‍👦  é  क्‍ष\n\nSelect text, change its style, or switch themes.',filename:'second.txt',theme:'dusk',syntax:false})]);
+window.editors=await Promise.all([createEditor(document.getElementById('first'),{value:'fn main() {\n    let greeting = "你好 👩🏽‍💻";\n    println!("{greeting}");\n}',filename:'first.rs',theme:'paper'}),createEditor(document.getElementById('second'),{value:'Unicode\n\nשלום עולם · مرحبا بالعالم\n\n👨‍👩‍👧‍👦  é  क्‍ष',filename:'second.txt',theme:'dusk',syntax:false})]);
 </script></body></html>

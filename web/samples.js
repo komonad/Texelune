@@ -1,6 +1,5 @@
 export const samples = {
-welcome: `// Texelune · a Rust + WebGPU text playground
-// Select text, apply a style, and keep writing.
+welcome: `// Rich-text editing sample
 
 use texelune::editor::{Document, Viewport};
 
@@ -15,7 +14,7 @@ impl TextEngine {
         let message = "Hello, 世界 · مرحبا · שלום";
         let target_hz = 144;
 
-        // Layout lives in a worker. Input stays responsive.
+        // Layout runs in a Worker.
         self.viewport.draw(message).await;
     }
 }

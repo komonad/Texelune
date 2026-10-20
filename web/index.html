@@ -17,13 +17,13 @@
     <div class="sidebar-bottom"><span class="section-label">独立组件</span><p>Rust 核心 / WebGPU 绘制<br>Worker 布局 / Shadow DOM</p><a href="component.html">查看双实例接入示例 ↗</a><code>texelune-editor</code></div>
   </aside>
   <main>
-    <header><div><span class="eyebrow">TEXELUNE / CODE STUDIO</span><h1>代码，按你的方式呈现。</h1><p>独立编辑器组件，接入语言服务与自定义主题。</p></div><div class="connection"><span class="connection-dot" id="connection-dot"></span><span id="connection-label">准备连接</span><button id="reconnect">重新连接</button></div></header>
+    <header><h1>编辑器演示</h1><div class="connection"><span class="connection-dot" id="connection-dot"></span><span id="connection-label">准备连接</span><button id="reconnect">重新连接</button></div></header>
     <div class="studio-grid">
       <section class="editor-column"><div class="document-heading"><span>src / <b id="document-name">main.rs</b></span><span id="highlight-source">加载编辑器…</span></div><div id="editor-container"></div><div class="editor-caption"><span id="component-state">WebGPU · Rust / WASM</span><span id="service-cost">语义高亮等待采样</span></div></section>
       <aside class="inspector">
         <div class="inspector-tabs" role="tablist"><button role="tab" data-panel="theme" class="active" aria-selected="true">主题</button><button role="tab" data-panel="problems" aria-selected="false">诊断 <span id="problem-count">0</span></button><button role="tab" data-panel="inspect" aria-selected="false">语言服务</button></div>
         <section id="panel-theme" class="inspector-panel">
-          <div class="panel-heading"><h2>颜色与语义</h2><span class="pill">LIVE</span></div><p class="muted">语义类型由语言服务提供，样式由主题决定。</p>
+          <div class="panel-heading"><h2>颜色与语义</h2></div><p class="muted">语义类型由语言服务提供，样式由主题决定。</p>
           <label class="field">主题<select id="theme-preset"><option value="paper">Paper · 明亮</option><option value="dusk">Dusk · 灰紫</option><option value="custom">Custom · 自定义</option></select></label>
           <div class="token-controls"><label><span><i style="background:#8041ae"></i>keyword</span><input id="token-keyword" type="color" value="#8041ae" aria-label="关键字颜色"></label><label><span><i style="background:#315eb6"></i>function</span><input id="token-function" type="color" value="#315eb6" aria-label="函数颜色"></label><label><span><i style="background:#20638b"></i>type / struct</span><input id="token-type" type="color" value="#20638b" aria-label="类型颜色"></label></div>
           <label class="check"><input id="readonly-bold" type="checkbox" checked> 只读变量使用粗体</label>
