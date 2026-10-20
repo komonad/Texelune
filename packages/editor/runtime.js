@@ -522,7 +522,7 @@ async function executeCommand(command){
     cancelMotions();const p=command.endsWith('End')?editor.length():0;editor.select(command.startsWith('select')?currentSelection().anchor:p,p);selectionChanged();post({type:'selection',selection:currentSelection(),reveal:true,affinity:null});return true;
   }
   if(command==='deleteLeft'||command==='deleteRight'){intent(()=>deleteText(command==='deleteRight'));return true;}
-  if(command==='cancel'){cancelEdit();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
+  if(command==='cancel'){cancelMotions();cancelEdit();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
   if(command==='goToDefinition'){if(!options.definitionProvider)return false;await interactions.go();return true;}
   if(command==='nextDiagnostic'||command==='previousDiagnostic')return !!goToDiagnostic(command==='nextDiagnostic'?1:-1);
   if(command==='toggleFullscreen'){await toggleFullscreen();return true;}
@@ -542,7 +542,8 @@ function keyDown(e){
   }
   e.preventDefault();if(command===null)return;
   if(typeof command==='function'){void commands.run(context=>command({editor:api,event:e,signal:context.signal}));return;}
-  intent(()=>{void executeCommand(command).catch(error=>reportProvider('command',error));});
+  const run=()=>{void executeCommand(command).catch(error=>reportProvider('command',error));};
+  if(['cancel','toggleFullscreen','togglePerformance'].includes(command)||command.endsWith('FontSize'))run();else intent(run);
 }
 input.addEventListener('keydown',keyDown);
 input.addEventListener('beforeinput',e=>{

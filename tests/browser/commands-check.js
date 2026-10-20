@@ -49,6 +49,16 @@ async page=>{
   await page.keyboard.press('Control+l');assert((await selection()).anchor===2&&(await selection()).head===6,'clearing overrides restores defaults');
   const invalid=await page.evaluate(()=>{try{window.texelune.configure({keybindings:{F2:'missing'}});return false;}catch{return window.texelune.configuration.keybindings.F2===undefined;}});
   assert(invalid,'invalid configuration is rejected atomically');
+  await page.evaluate(()=>window.texelune.configure({keybindings:{'Alt+Enter':null}}));
+  await page.keyboard.press('Alt+Enter');assert(await page.evaluate(()=>!window.texelune.element.hasAttribute('fullscreen')),'fullscreen shortcuts can be disabled');
+  await page.evaluate(()=>window.texelune.configure({keybindings:undefined}));await page.keyboard.press('Alt+Enter');
+  await page.waitForFunction(()=>window.texelune.element.hasAttribute('fullscreen'));
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>!window.texelune.element.hasAttribute('fullscreen'));
+  await page.evaluate(()=>{window.__intercepted=0;window.texelune.showPerformance(false);window.texelune.configure({onKeyDown:event=>{if(event.altKey&&event.key==='p'){window.__intercepted++;return true;}}});});
+  await page.keyboard.press('Alt+p');assert(await page.evaluate(()=>window.__intercepted===1&&window.texelune.root.getElementById('performance-panel').hidden),'onKeyDown takes priority over performance shortcuts');
+  await page.evaluate(()=>window.texelune.configure({onKeyDown:undefined}));await page.keyboard.press('Alt+p');
+  assert(await page.evaluate(()=>!window.texelune.root.getElementById('performance-panel').hidden),'default performance binding is restored');
+  await page.evaluate(()=>window.texelune.showPerformance(false));
 
   await load('target symbol');await page.evaluate(()=>{window.__definitions=0;window.texelune.configure({definitionProvider:async({offset,signal})=>{window.__definitions++;window.__definitionOffset=offset;return[{start:0,end:6}];}});});
   const point=await page.evaluate(()=>{const e=window.texelune,c=e.frame.navigation.cells.find(c=>c.start===8),r=e.root.getElementById('viewport').getBoundingClientRect();return{x:r.left+c.bounds[0]+c.bounds[2]*.3,y:r.top+c.bounds[1]+c.bounds[3]*.5};});
