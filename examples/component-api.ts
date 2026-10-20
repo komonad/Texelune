@@ -11,6 +11,12 @@ export function workerLanguage(editor: EditorAPI, workerUrl: string) {
 export async function mount(container: HTMLElement, workspace: {rootUri: string; uri: string; text: string}) {
   const editor: EditorAPI = await createEditor(container, {
     value: workspace.text, filename: 'main.rs', autoIndent: 'brackets', indentUnit: '  ',
+    middleClickDefinition: true,
+    keybindings: {
+      'Mod+Shift+d': 'duplicateLineDown',
+      'Alt+p': null,
+      'F3': async ({editor: instance, signal}) => {if (!signal.aborted) await instance.goToDefinition();},
+    },
     onBeforeEdit: request => request.text.includes('\0') ? false : request,
     onKeyDown(event, instance) {
       if (event.key === 'F2') { instance.insert('symbol'); return true; }
@@ -30,6 +36,8 @@ export async function mount(container: HTMLElement, workspace: {rootUri: string;
   widget.update({anchor: 1});
   editor.configure({autoIndent: async (context: IndentContext) => ({text: '\n' + context.leadingWhitespace})});
   editor.configure({wordProvider: undefined});
+  await editor.executeCommand('selectLine');
+  editor.configure({keybindings: undefined});
   const range: TextRange = await editor.wordRange(0);
   editor.select(range.start, range.end);
   const revision = editor.version;

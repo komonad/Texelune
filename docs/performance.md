@@ -16,6 +16,8 @@ Printable ASCII paragraphs over 8192 characters without inlays use fixed-column 
 
 The default LSP synchronization ceiling is 2MiB, independent of editor size. Crossing it pauses the service before serializing the entire document. `text` creates a complete JS string; large-document integrations should use `documentInfo` and `slice`.
 
+Line transforms above 8192 scalars use a short-lived Worker. The main thread transfers rope slices of at most 4096 scalars and yields around 1.5ms intervals; Worker completion applies one version- and selection-checked transaction. Large copy/cut operations stream text into an asynchronous clipboard payload. Edits, selection changes, document replacement, reconfiguration, disposal and command deadlines cancel preparation; cut deletes text only after a successful clipboard write. Atomic document replacement work and callbacks still run on the main thread and scale with the modified range.
+
 ## Metrics
 
 | Metric | Meaning |

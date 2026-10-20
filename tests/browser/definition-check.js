@@ -11,8 +11,10 @@ async page=>{
   await page.screenshot({path:'output/playwright/definition-hover.png'});
   await page.mouse.click(point.x,point.y);await page.keyboard.up('Control');await stable();
   assert(await page.evaluate(()=>{const e=window.texelune,s=e.selection;return e.slice(s.anchor,s.head)==='Palette'&&e.positionAt(s.head).line<10;}),'Ctrl click reaches local type definition');
-  const external=await page.evaluate(async()=>{const e=window.texelune,offset=[...e.text.slice(0,e.text.indexOf('labels::describe')+8)].length;const targets=await window.studio.lsp.definition(offset);await e.goToDefinition(offset);return targets;});
-  assert(external.some(target=>target.uri.endsWith('/labels.rs')&&target.start===undefined),'external definition retains URI and UTF-16 range');
+  const external=await page.evaluate(async()=>{const e=window.texelune,offset=[...e.text.slice(0,e.text.indexOf('labels::describe')+8)].length;const targets=await window.studio.lsp.definition(offset);e.select(offset,offset);e.reveal(offset);return{offset,targets};});await stable();
+  const externalPoint=await page.evaluate(offset=>{const e=window.texelune,c=e.frame.navigation.cells.find(cell=>cell.start===offset),r=e.root.getElementById('viewport').getBoundingClientRect();return{x:r.left+c.bounds[0]+2,y:r.top+c.bounds[1]+12};},external.offset);
+  await page.mouse.click(externalPoint.x,externalPoint.y,{button:'middle'});
+  assert(external.targets.some(target=>target.uri.endsWith('/labels.rs')&&target.start===undefined),'external definition retains URI and UTF-16 range');
   await page.waitForFunction(()=>window.studio.lsp.options.uri.endsWith('/labels.rs')&&window.texelune.text.startsWith('pub fn describe'));await stable();
   assert(await page.evaluate(()=>{const e=window.texelune,s=e.selection;return e.slice(s.anchor,s.head)==='describe';}),'host opens and selects the cross-file definition');
   const blocked=await page.evaluate(async()=>({escape:(await fetch('/api/source?path=..%2F..%2FCargo.toml')).status,absolute:(await fetch('/api/source?path=C%3A%5CWindows%5Cwin.ini')).status}));

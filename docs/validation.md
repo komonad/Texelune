@@ -1,5 +1,11 @@
 # Validation
 
+## Keyboard commands and middle-click navigation
+
+`tests/browser/commands-check.js` exercises native and asynchronous clipboard access, empty-selection line copy/cut, CRLF and trailing-empty-line deletion, undo selection restoration, linewise paste, edit-hook vetoes, line transforms, Unicode word deletion, binding overrides, disabled bindings and callback precedence. It validates a Worker-prepared line duplication, cancellation by later input, streamed copy and remapped asynchronous cut. Unit tests cover normalized platform bindings, IME/AltGraph exclusions, directed scalar selection mapping, Unicode separators and EOF line transforms. The real language-service definition check uses middle-click to open and select a cross-file definition.
+
+`tests/browser/commands-stress-check.js` starts a transformation on a 100MiB logical line, observes main-thread timer progress, inserts subsequent input and verifies immediate Worker termination with no stale transaction. Whole-line selection uses range metadata. Unit checks cover transform deadlines, denied clipboard writes and cancelled cuts; pointer checks cover cancelled and timed-out definition requests.
+
 ## Diagnostic presentation and scene continuity
 
 `tests/browser/diagnostics-check.js` validates rust-analyzer error underlines, hover messages, gutter severity, F8 navigation and problem-list reveal. It also covers all four diagnostic severities, mixed Unicode/BiDi ranges, EOF point diagnostics, stale-batch rejection, edit invalidation and binding ownership. The static Pages check validates the same editor markers from the TypeScript Worker, including reopening the same URI at document version zero. Unit tests compare diagnostic interval queries with a full scan over nested ranges.

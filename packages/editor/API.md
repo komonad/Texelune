@@ -42,6 +42,7 @@ editor.destroy();
 | `replace(start,end,text)` | 单个可撤销替换，返回是否成功应用。 |
 | `applyEdit(request,expectedVersion?)` | 替换并支持 `caretOffset`；版本不匹配返回 `false`。 |
 | `undo()`, `redo()` | 历史操作，没有历史时返回 `false`。 |
+| `executeCommand(command)` | 执行内置编辑命令，返回 `Promise<boolean>`。 |
 | `format(style)`, `toggle(attribute)` | 设置完整样式，或切换 bold/italic/underline 并保留其他项。 |
 | `reveal(offset?)`, `focus()` | 最小幅度将目标滚入视口；默认当前光标。聚焦不触发浏览器页面滚动。 |
 | `load(text,filename?)` | 替换文档、清空历史、文档装饰、inlay 和 overlay。 |
@@ -70,9 +71,54 @@ editor.configure({
 
 `onBeforeEdit(request,editor)` 在文本替换前同步执行。请求包含 `start/end/text/source/caretOffset/version/selection`。返回 `false` 取消，返回替换请求可改写文本和范围，返回 `undefined` 保持原请求。随后触发可取消的 `beforeedit` 事件。版本过期、非法范围或回调抛错时不应用事务；错误通过 `providererror` 报告。
 
-拦截覆盖普通输入、删除、剪切、粘贴、IME 更新、换行、Tab 和 `insert/replace/applyEdit`。`source` 为 `input/delete/cut/paste/composition/newline/tab/api`。格式事务、撤销/重做和文档替换不经过文本改写钩子；普通事务均通过 `change/onChange` 通知，文档替换使用 `documentchange`。IME 更新属于一个组合输入历史组。
+拦截覆盖普通输入、删除、剪切、粘贴、IME 更新、换行、Tab、行编辑命令和 `insert/replace/applyEdit`。`source` 为 `input/delete/cut/paste/composition/newline/tab/api` 或行编辑命令名。格式事务、撤销/重做和文档替换不经过文本改写钩子；普通事务均通过 `change/onChange` 通知，文档替换使用 `documentchange`。IME 更新属于一个组合输入历史组。
 
 `onBeforeEdit/onChange/onSelectionChange/onKeyDown` 是同步主线程回调，应保持轻量。`onKeyDown` 返回 `true` 或调用 `preventDefault()` 表示已处理。不要把 Promise 返回给 `onBeforeEdit`；昂贵分析放入 Worker，异步结果使用 `applyEdit(request,readVersion)`。避免在没有终止条件的 `onChange` 中再次编辑文档。
+
+## 快捷键与命令
+
+```ts
+import {defaultKeybindings, editorCommands} from 'texelune-editor';
+editor.configure({
+  keybindings: {
+    'Mod+Shift+d': 'duplicateLineDown',
+    'Mod+l': null,
+    'F2': async ({editor, event, signal}) => {
+      const text = await loadSnippet(signal);
+      if (!signal.aborted) editor.insert(text);
+    },
+  },
+});
+await editor.executeCommand('selectLine');
+```
+
+`keybindings` 是默认映射上的覆盖表。键名大小写不敏感，修饰符顺序不限；`Mod` 在 macOS/iOS 对应 Meta，其他平台对应 Ctrl。支持 `Ctrl/Meta/Alt/Shift`、`Left/Right/Up/Down`（也可用 `ArrowLeft` 等）、`Plus`、`Space` 和标准 `KeyboardEvent.key` 名称。映射按 `key` 匹配，采用当前键盘布局。`null` 消费事件并禁用该快捷键；命令名重新绑定内置行为；函数接收 `{editor,event,signal}`，同步或异步执行。`onKeyDown` 优先于映射；IME、Dead key、AltGraph 交给输入系统。未绑定按键保留浏览器行为。
+
+每次 `configure({keybindings})` 替换整个覆盖表，`undefined` 恢复默认映射。`defaultKeybindings` 和 `editorCommands` 是只读导出；类型分别为 `Keybindings` 与 `EditorCommand`。非法修饰符或命令名使配置抛出 `TypeError`，保持当前配置。`executeCommand` 使用同一套内置行为，不调用 `onKeyDown`；返回是否处理了命令，异步准备取消、失败或没有可执行的编辑时返回 `false`，未知命令拒绝 Promise。移动命令返回 `true` 表示已提交导航，几何可能随后异步就绪。剪贴板命令需要安全上下文、浏览器权限和用户手势。
+
+| 默认快捷键 | 命令 / 行为 |
+| --- | --- |
+| Mod+A / Z / Shift+Z，Ctrl+Y | 全选 / 撤销 / 重做。 |
+| Mod+C / X / V，Ctrl+Insert，Shift+Delete / Insert | 复制 / 剪切 / 粘贴。无选择时复制或剪切当前逻辑行。 |
+| Mod+L / Mod+Shift+K | `selectLine` / `deleteLine`。 |
+| Alt+Up / Down | `moveLineUp` / `moveLineDown`。 |
+| Alt+Shift+Up / Down | `duplicateLineUp` / `duplicateLineDown`。 |
+| Tab / Shift+Tab，Mod+] / [ | 插入缩进单位（有选择时缩进逻辑行）/ 减少缩进。 |
+| Enter，Mod+Enter / Mod+Shift+Enter | 自动缩进换行，当前行块下方 / 上方插入空行。 |
+| 方向键、Home / End，加 Shift | BiDi 视觉移动、软折行起止；Shift 扩展选择。 |
+| Mod+Left / Right，加 Shift | 按逻辑文本顺序移动到分词边界；Shift 扩展选择。 |
+| Mod+Home / End，加 Shift | 文档起止；Shift 扩展选择。 |
+| Backspace / Delete，加 Mod | 删除字素 / 按分词删除。 |
+| Mod+B / I / U | 粗体 / 斜体 / 下划线。 |
+| F12，F8 / Shift+F8 | 定义跳转，下一个 / 上一个诊断。 |
+| Mod+Plus / = / - / 0 | 增大 / 减小 / 重置字号。 |
+| Alt+P / Alt+Enter，Escape | 性能窗 / 全屏；取消待处理命令、关闭提示和退出全屏。 |
+
+行操作采用逻辑行，包含换行；选择恰好结束于下一行行首时排除该行。移动、复制和缩进保留选择方向，作为一个可撤销文本事务。末行没有换行时，整行复制附加换行；剪切末行移除相邻分隔符，避免留下空行。组件写入整行元数据，粘贴到空选择时插入当前行上方；带选择或来自外部的普通文本按选择替换。行变换保留换行符；系统剪贴板可能按平台转换换行。剪切仅在剪贴板写入成功后删除文本，仍经过 `onBeforeEdit`。
+
+超过 8192 scalar 的行变换在临时 Worker 中准备；主线程以 4096 scalar 切片并约每 1.5ms 让出执行。大范围复制使用流式异步剪贴板写入。准备期间编辑、选择变化、文档替换、配置变化、下一条异步命令或销毁会取消结果；默认截止时间由 `providerTimeout` 控制，8 秒。分词命令复用 `wordProvider` 与导航 Worker，保持字素单元完整。原子事务提交和宿主回调仍在主线程，成本随修改量增长；Worker 准备不等于对任意大范围替换保证帧预算。自定义异步处理函数应检查 `signal`，自行执行的异步副作用不会自动回滚。
+
+剪贴板使用纯文本；系统已接受的异步写入无法撤销，过期写入不会继续剪切文档。行变换通过文本替换提交，装饰遵循替换范围的映射规则，不提供富文本片段的样式搬运。
 
 ## 事件
 
@@ -118,7 +164,7 @@ provider 接收 `{editor,offset,position,version,signal}`，同步或异步返�
 
 `showHover(content,anchor?)` / `hideHover()` 管理一个临时提示；多个独立控件使用 `addOverlay()`。Overlay 覆盖文本，不占文档高度；需要参与布局时使用 block inlay。
 
-## Ctrl 悬浮与跳转
+## 定义悬浮与跳转
 
 ```ts
 editor.configure({
@@ -134,7 +180,7 @@ editor.configure({
 await editor.goToDefinition();
 ```
 
-按住 Ctrl 或 Meta 悬浮时解析目标，仅在存在结果后为源范围添加下划线与背景。优先使用 `originRange`，否则使用分词范围。Ctrl/Meta+单击与 F12 执行跳转；多个目标提供选择控件。
+按住 Ctrl 或 Meta 悬浮时解析目标，仅在存在结果后为源范围添加下划线与背景。优先使用 `originRange`，否则使用分词范围。Ctrl/Meta+单击、鼠标中键单击与 F12 执行跳转；多个目标提供选择控件。中键在正文中阻止浏览器自动滚动，不触发左键选区拖动；悬浮控件、滚动条和行号不参与中键跳转。`middleClickDefinition:false` 关闭中键行为。所有入口共用 `definitionProvider`、取消、超时、`onNavigate` 和 `navigate` 事件。
 
 `NavigationTarget` 支持 scalar `start/end`，或跨文件 `uri/range/selectionRange`（UTF-16 行列）。同文档 scalar 目标默认选中并滚入视口。跨文件由 `onNavigate` 或可取消的 `navigate` 事件交给宿主，不自动读取文件。`onNavigate` 返回 `true` 表示已处理，`false/undefined` 允许默认同文档行为。
 

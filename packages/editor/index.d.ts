@@ -19,11 +19,26 @@ export interface IndentInsertion { text: string; caretOffset?: number; }
 export type AutoIndent = 'none' | 'keep' | 'brackets' | ((context: IndentContext) => string | IndentInsertion | null | Promise<string | IndentInsertion | null>);
 export interface EditRequest { start: number; end: number; text: string; source?: string; caretOffset?: number; }
 export interface BeforeEdit extends EditRequest { version: number; selection: Selection; }
+export type EditorCommand =
+  | 'selectAll' | 'undo' | 'redo' | 'copy' | 'cut' | 'paste' | 'bold' | 'italic' | 'underline'
+  | 'selectLine' | 'deleteLine' | 'moveLineUp' | 'moveLineDown' | 'duplicateLineUp' | 'duplicateLineDown'
+  | 'insertTab' | 'indent' | 'outdent' | 'insertNewline' | 'insertLineAbove' | 'insertLineBelow'
+  | 'cursorWordLeft' | 'cursorWordRight' | 'selectWordLeft' | 'selectWordRight' | 'deleteWordLeft' | 'deleteWordRight'
+  | 'cursorLeft' | 'cursorRight' | 'cursorUp' | 'cursorDown' | 'selectLeft' | 'selectRight' | 'selectUp' | 'selectDown'
+  | 'cursorLineStart' | 'cursorLineEnd' | 'selectLineStart' | 'selectLineEnd'
+  | 'cursorDocumentStart' | 'cursorDocumentEnd' | 'selectDocumentStart' | 'selectDocumentEnd'
+  | 'deleteLeft' | 'deleteRight' | 'cancel' | 'goToDefinition' | 'nextDiagnostic' | 'previousDiagnostic'
+  | 'increaseFontSize' | 'decreaseFontSize' | 'resetFontSize' | 'togglePerformance' | 'toggleFullscreen';
+export interface KeybindingContext { editor: EditorAPI; event: KeyboardEvent; signal: AbortSignal; }
+export type KeybindingHandler = (context: KeybindingContext) => void | boolean | Promise<void | boolean>;
+export type Keybindings = Record<string, EditorCommand | KeybindingHandler | null>;
 export interface EditorExtensions {
   autoIndent?: AutoIndent;
   indentUnit?: string;
   hoverDelay?: number;
   providerTimeout?: number;
+  keybindings?: Keybindings;
+  middleClickDefinition?: boolean;
   wordProvider?: (context: WordContext) => TextRange | null | Promise<TextRange | null>;
   hoverProvider?: (context: ProviderContext) => HoverResult | string | Node | null | Promise<HoverResult | string | Node | null>;
   definitionProvider?: (context: ProviderContext) => NavigationTarget | NavigationTarget[] | null | Promise<NavigationTarget | NavigationTarget[] | null>;
@@ -85,6 +100,7 @@ export interface EditorAPI {
   insert(text: string): boolean;
   replace(start: number, end: number, text: string): boolean;
   applyEdit(request: EditRequest, expectedVersion?: number): boolean;
+  executeCommand(command: EditorCommand): Promise<boolean>;
   configure(extensions: EditorConfiguration): void;
   readonly configuration: Readonly<EditorConfiguration>;
   lineRange(line: number): TextRange;
@@ -122,3 +138,5 @@ export class TexeluneEditorElement extends HTMLElement { readonly api?: EditorAP
 export function createEditor(container: HTMLElement, options?: EditorOptions): Promise<EditorAPI>;
 export const themes: Record<'paper' | 'dusk', Theme>;
 export function resolveTheme(theme?: string | Theme): ResolvedTheme;
+export const defaultKeybindings: Readonly<Record<string, EditorCommand>>;
+export const editorCommands: ReadonlyArray<EditorCommand>;

@@ -4,6 +4,8 @@ Framework-independent Rust/WASM/WebGPU text editor. Each instance owns its docum
 
 See [JavaScript / TypeScript API](API.md) for coordinate conventions, callbacks, providers, overlays, word selection, indentation and lifecycle contracts. Public declarations are included in `index.d.ts` and `lsp.d.ts`.
 
+Common shortcuts include logical-line copy/cut with an empty selection, line selection/deletion/movement/duplication, indentation and word navigation. `keybindings` remaps commands, disables a binding with `null`, or installs an asynchronous handler with an `AbortSignal`; `onKeyDown` takes priority. `executeCommand()` exposes the built-in commands to application controls. Definition providers serve Ctrl/Meta-click, F12 and middle-click navigation; `middleClickDefinition:false` disables the middle button binding.
+
 ```js
 import { createEditor } from 'texelune-editor';
 

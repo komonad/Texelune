@@ -31,6 +31,8 @@ Start the demo, then open a dedicated Playwright CLI browser session:
 npx --yes --package @playwright/cli playwright-cli -s=texelune open http://127.0.0.1:4173/web/ --browser msedge
 npx --yes --package @playwright/cli playwright-cli -s=texelune resize 1440 1050
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/interactions-check.js
+npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/commands-check.js
+npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/commands-stress-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/definition-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/component-lsp-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/scroll-check.js
