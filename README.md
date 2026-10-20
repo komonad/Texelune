@@ -22,6 +22,7 @@ Status: experimental, pre-1.0. The component is a private workspace distributed 
 - An optional LSP adapter for semantic highlights, diagnostics, hover, definitions and completion.
 - Asynchronous completion beside the caret, automatic/manual queries, configurable providers and keyboard/pointer acceptance.
 - Diagnostic underlines, gutter marks, hover messages, severity counts and F8 navigation.
+- Configurable bracket pairs, automatic closing, closing-bracket traversal and cancellable matching/navigation.
 
 ## Run from a fresh clone
 

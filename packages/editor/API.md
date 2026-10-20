@@ -216,7 +216,7 @@ editor.configure({
 | --- | --- |
 | `'none'` | 一个换行。 |
 | `'keep'`（默认） | 延续当前逻辑行前导空格和 Tab。 |
-| `'brackets'` | 在 `{`、`[`、`(` 后增加 `indentUnit`；配对括号中间换行会将闭括号移到下一行。 |
+| `'brackets'` | 在 `bracketPairs` 定义的左括号后增加 `indentUnit`；配对括号中间换行会将闭括号移到下一行。 |
 | `(context)=>insertion` | 同步或异步返回字符串、`{text,caretOffset?}`；`null` 取消换行。 |
 
 `indentUnit` 默认四个空格，可设为 `'\t'` 或其他空格数；Tab 插入该单位。括号策略匹配邻近字符，不解析注释和字符串；语法感知缩进使用自定义策略。
@@ -231,7 +231,33 @@ editor.configure({
 });
 ```
 
-`IndentContext` 包含 `before/after/leadingWhitespace/indentUnit/selection/position/version/signal/truncated`。前后文各限制为 4096 scalar，前导缩进最多读取 4096 scalar；`truncated` 标识截断。等待期间继续输入、移动选择、切换文档、配置变化或销毁会取消结果，防止覆盖新操作。一次缩进插入是一个撤销事务。
+`IndentContext` 包含 `before/after/leadingWhitespace/indentUnit/bracketPairs/selection/position/version/signal/truncated`。前后文各限制为 4096 scalar，前导缩进最多读取 4096 scalar；`truncated` 标识截断。等待期间继续输入、移动选择、切换文档、配置变化或销毁会取消结果，防止覆盖新操作。一次缩进插入是一个撤销事务。
+
+## 括号
+
+```ts
+import {defaultBracketPairs} from 'texelune-editor';
+editor.configure({
+  bracketPairs: [...defaultBracketPairs, {open:'⟦',close:'⟧'}],
+  autoClosingBrackets: true,
+  skipClosingBrackets: true,
+  bracketMatching: true,
+  keybindings: {'Mod+Shift+\\': 'goToBracket'},
+});
+const match = await editor.matchBrackets(editor.selection.head, signal);
+if (match) editor.reveal(match.close.start);
+editor.skipClosingBracket('）');
+```
+
+`bracketPairs` 默认包含 `()`、`[]`、`{}`、`（）`、`【】`、`「」`、`『』`、`〈〉`、`《》`。配置替换整张定义表，`undefined` 恢复默认，空数组关闭所有定义。每个端点必须是独立的单个 Unicode scalar，所有端点互不重复；最多 64 对，不允许空白、控制符、组合标记或未配对代理项。定义会复制并冻结，非法配置抛出 `TypeError` 并保留原配置。不支持同字符引号和多字符分隔符。
+
+`autoClosingBrackets` 默认 `true`：空选择输入左括号时插入一对并将光标放在中间，整体为一个撤销事务，经过 `onBeforeEdit/beforeedit`。`skipClosingBrackets` 默认 `true`：空选择输入的右括号与光标右侧字符相同时，仅将光标越过它所在的整个字素，不产生文本事务。`skipClosingBracket(close?)` 对应用控件开放同一能力，省略参数时使用光标右侧的已定义右括号，成功返回 `true`。两项可以独立关闭。选区替换、粘贴和 `insert/replace/applyEdit` 保持字面文本；IME 组合期间保留候选文本，只在空选择开始的组合提交时处理配对与越过。
+
+`bracketMatching` 默认 `true`，为折叠光标附近的一对括号绘制边框和背景；支持软折行与 BiDi 几何，主题颜色为 `bracketBorder`、`bracketBackground`。匹配优先检查光标位置的端点，否则检查前一字符，使用逻辑顺序和严格嵌套；遇到交叉配对、缺失端点或超过 65,536 层嵌套时返回 `null`。默认匹配是字符级的，包含注释和字符串中的括号。语法感知匹配可配置 `bracketMatchingProvider(context)`，接收 `ProviderContext`，同步或异步返回 `{open:{start,end},close:{start,end}}` 或 `null`；这些范围采用 scalar 坐标并包含端点。
+
+`matchBrackets(offset?,signal?)` 返回 `Promise<BracketMatch|null>`，默认当前光标，即使关闭自动高亮也可显式查询。默认扫描每次读取不超过 1,024 scalar，约 1ms 后让出主线程，不构造全文。所有查询受 `providerTimeout`（默认 8 秒）和 `AbortSignal` 控制；编辑、选择变化、文档切换、配置变化和销毁取消在途查询。取消拒绝 `AbortError`，超时拒绝 `TimeoutError`；自动高亮的其他失败通过 `providererror` 的 `kind:'brackets'` 报告。耗时的自定义 provider 应在 Worker 中分析并遵守取消信号。
+
+`executeCommand('goToBracket')` 将光标移至匹配另一端并显露目标，返回是否跳转；没有默认绑定，可以在 `keybindings` 中分配快捷键。匹配按当前读版本和选择验证后才用于导航。
 
 ## 补全
 
@@ -251,13 +277,13 @@ editor.on('completionchange', ({detail}) => console.log(detail.pending, detail.i
 
 `completionProvider` 接收 `CompletionContext`：通用 provider 字段，以及 `triggerKind:'invoked'|'automatic'`、可选 `triggerCharacter`。返回候选数组或 `null`，允许异步。`CompletionItem` 包含 `label`，可选 `text/start/end/detail/filterText/sortText/preselect/kind`；`start/end` 是当前读版本的 scalar 半开范围，必须覆盖查询位置。省略文本时插入标签，省略范围时使用附近标识符的完整范围，包括光标右侧后缀。标识符推断各扫描前后最多 513 scalar；超出 512 scalar 的单侧部分需要显式范围。
 
-候选按 `filterText ?? label` 做 NFC 与大小写无关的前缀过滤，按 `sortText ?? label` 稳定排序；默认首项，优先选择标记为 `preselect` 的项。最多处理 200 项，显示标签和详情时限制长度。候选与详情按纯文本显示，颜色跟随组件主题。菜单位于光标旁，空间不足时向上或向左调整，保留输入焦点，并通过 listbox、option 和 `aria-activedescendant` 暴露当前项。
+候选按 `filterText ?? label` 做 NFC 与大小写无关的前缀过滤，按 `sortText ?? label` 稳定排序；默认首项，优先选择标记为 `preselect` 的项。最多处理 200 项，显示标签和详情时限制长度。每行按类型标记、名称、详情对齐，长文本省略并可通过原生悬浮提示读取。候选与详情按纯文本显示，颜色跟随组件主题。菜单位于光标旁，空间不足时向上或向左调整，保留输入焦点，并通过 listbox、option 和 `aria-activedescendant` 暴露当前项。
 
-Ctrl/Meta+Space 手动查询。输入标识符字符、`.` 或 `:` 后自动查询，默认防抖 120ms；`completionDelay` 可调整，`automaticCompletion:false` 关闭自动查询。IME 组合输入期间关闭菜单，组合结束后可再次自动查询。菜单打开时，↑/↓ 循环选择，PageUp/PageDown 跨 8 项，Enter/Tab 接受，Escape 关闭。显式 `keybindings` 与 `onKeyDown` 优先于菜单快捷键；支持 `triggerCompletion/acceptCompletion/nextCompletion/previousCompletion/hideCompletion` 命令。
+Ctrl/Meta+Space 手动查询。输入标识符字符、`.` 或 `:` 后自动查询，默认防抖 120ms；`completionDelay` 可调整，`automaticCompletion:false` 关闭自动开启，已手动打开的会话仍随输入刷新。IME 组合输入期间关闭菜单，组合结束后可再次自动查询。菜单打开时，↑/↓ 循环选择，PageUp/PageDown 跨 8 项，Enter/Tab 接受，Escape 关闭。显式 `keybindings` 与 `onKeyDown` 优先于菜单快捷键；支持 `triggerCompletion/acceptCompletion/nextCompletion/previousCompletion/hideCompletion` 命令。
 
 `triggerCompletion()` 最小幅度显露光标并返回经过筛选的候选数组，取消、超时或无结果时为空；`acceptCompletion(index?)` 默认接受当前项，返回是否应用；`hideCompletion()` 取消准备并关闭菜单。只读 `completion` 和 `completionchange` 提供 `{visible,pending,index,items}`。接受候选使用 `source:'completion'` 的单次文本事务，经过编辑拦截并可一次撤销。`EditorChange.source` 标识文本编辑来源；撤销、重做和格式事务可能不包含此字段。
 
-每批结果严格绑定文档版本和选区。继续编辑、移动选择、文档替换、失焦、正文点击或滚轮、重新配置、销毁使查询失效；同版本零的不同文档也会取消。异步请求携带 `AbortSignal`，默认使用 `providerTimeout` 的 8 秒截止时间。补全不会阻塞输入，也不会将过期候选应用到后续编辑；昂贵计算由 provider 放到 Worker。
+每批结果严格绑定文档版本和选区。继续编辑、移动选择、文档替换、失焦、正文点击或滚轮、重新配置、销毁使查询失效；同版本零的不同文档也会取消。异步请求携带 `AbortSignal`，默认使用 `providerTimeout` 的 8 秒截止时间。输入和删除位于已有候选替换范围内时，先将已显示候选映射到当前版本并按新前缀过滤，等待期间仍可接受这些候选。窗口保持同一个 DOM 容器，当前选择与滚动位置尽量保留，新结果原位替换；新几何到达前使用原锚点几何。其他编辑关闭会话。`completion.pending` 可以和非空候选同时存在，列表用 `aria-busy` 标识刷新。补全不会阻塞输入，也不会接受过期请求的结果；昂贵计算由 provider 放到 Worker。
 
 `LspClient.attach()` 自动安装补全 provider，并恢复其仍拥有的配置。适配器支持数组与 `CompletionList`、默认编辑范围、`TextEdit`、`InsertReplaceEdit`（采用 replace 范围），在 LSP Worker 中将 UTF-16 转为 scalar。只有已声明的触发字符使用 LSP TriggerCharacter 上下文。断开服务关闭其补全菜单；超过同步上限时不读取全文。需要 snippet、额外编辑或自动导入的候选不显示；当前不执行 completion command、延迟 resolve、参数提示或占位符跳转。
 

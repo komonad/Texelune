@@ -22,6 +22,11 @@ export function prepareCompletions(items,editor,offset){
   }).sort((a,b)=>a.sortText<b.sortText?-1:a.sortText>b.sortText?1:a._order-b._order).map(({_order,...item})=>Object.freeze(item));
 }
 
+export function advanceCompletions(items,change,editor,offset){
+  const delta=[...change.text].length-(change.end-change.start);
+  return prepareCompletions(items.filter(item=>item.start<=change.start&&item.end>=change.end).map(item=>({...item,end:item.end+delta})),editor,offset);
+}
+
 export class CompletionController {
   constructor({api,options,overlays,report,emit,edit}){
     Object.assign(this,{api,options,overlays,report,emit,edit});this.items=[];this.index=0;this.serial=0;this.timer=0;this.pending=false;this.composing=false;
@@ -34,7 +39,7 @@ export class CompletionController {
     input.addEventListener('blur',()=>this.hide(),{signal});
     window.addEventListener('blur',()=>this.hide(),{signal});
     this.resize=new ResizeObserver(()=>this.fit());this.resize.observe(viewport);
-    host.addEventListener('frame',()=>{if(this.widget&&!this.pending)this.highlight();},{signal});
+    host.addEventListener('frame',()=>{if(this.widget)this.widget.update({anchor:this.checkpoint.head,retainPosition:false});},{signal});
     for(const type of ['pointerdown','wheel'])viewport.addEventListener(type,event=>{if(!event.target.closest('.completion-widget'))this.hide();},{capture:true,signal});
     input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-haspopup','listbox');input.setAttribute('aria-expanded','false');
   }
@@ -42,26 +47,34 @@ export class CompletionController {
   publish(){this.emit('completionchange',this.state);}
   valid(){if(this.destroyed)return false;const s=this.api.selection,c=this.checkpoint;return !!c&&this.api.version===c.version&&s.anchor===c.anchor&&s.head===c.head;}
   capture(){const s=this.api.selection;this.checkpoint={...s,version:this.api.version};}
+  cancelRead(){clearTimeout(this.timer);this.read?.abort();this.read=null;this.serial++;}
   hide(){
     const active=this.pending||!!this.widget||!!this.items.length;
-    clearTimeout(this.timer);this.read?.abort();this.read=null;this.serial++;this.pending=false;this.checkpoint=null;this.items=[];this.index=0;
+    this.cancelRead();this.pending=false;this.checkpoint=null;this.items=[];this.index=0;
     this.widget?.dispose();this.widget=null;this.input.removeAttribute('aria-controls');this.input.removeAttribute('aria-activedescendant');this.input.setAttribute('aria-expanded','false');
     this.overlays.layer.classList.remove('has-completion');
     if(active)this.publish();
   }
   changed(change){
-    const wasOpen=!!this.items.length;this.hide();
-    if(this.composing||this.options().automaticCompletion===false||!this.options().completionProvider)return;
+    const wasOpen=!!this.widget;
+    if(this.composing||this.options().automaticCompletion===false&&!wasOpen||!this.options().completionProvider){this.hide();return;}
     const typed=change.source==='input'&&change.text.length<=2&&/^[\p{ID_Continue}$.:]$/u.test(change.text);
-    if(typed||wasOpen&&change.source==='delete')this.schedule(change.text);
+    if(typed||wasOpen&&change.source==='delete'){
+      const selected=this.items[this.index]?.label;
+      this.items=advanceCompletions(this.items,change,this.api,this.api.selection.head);
+      this.index=Math.max(0,this.items.findIndex(item=>item.label===selected));this.schedule(change.text,true);
+    }else this.hide();
   }
-  schedule(character){
-    this.hide();if(this.destroyed||!this.options().completionProvider||this.composing||this.api.root.activeElement!==this.input||this.api.selection.anchor!==this.api.selection.head)return;
+  schedule(character,retain=false){
+    if(retain)this.cancelRead();else this.hide();
+    if(this.destroyed||!this.options().completionProvider||this.composing||this.api.root.activeElement!==this.input||this.api.selection.anchor!==this.api.selection.head){this.hide();return;}
     this.capture();this.pending=true;this.publish();
-    this.timer=setTimeout(()=>{if(this.valid())void this.trigger('automatic',character);else this.hide();},Math.max(0,this.options().completionDelay??120));
+    if(this.widget)this.render();
+    this.timer=setTimeout(()=>{if(this.valid())void this.trigger('automatic',character,true);else this.hide();},Math.max(0,this.options().completionDelay??120));
   }
-  async trigger(triggerKind='invoked',triggerCharacter){
-    this.hide();if(this.destroyed)return[];const provider=this.options().completionProvider,s=this.api.selection;
+  async trigger(triggerKind='invoked',triggerCharacter,retain=false){
+    if(retain)this.cancelRead();else this.hide();
+    if(this.destroyed)return[];const provider=this.options().completionProvider,s=this.api.selection;
     if(!provider||this.composing||s.anchor!==s.head)return[];
     this.capture();const serial=this.serial,abort=this.read=new AbortController(),offset=s.head;
     this.api.reveal(offset);
@@ -70,7 +83,8 @@ export class CompletionController {
     try{
       const result=await deadline(()=>provider(context),abort.signal,this.options().providerTimeout??8000);
       if(abort.signal.aborted||serial!==this.serial||!this.valid())return[];
-      this.items=prepareCompletions(result,this.api,offset);this.pending=false;this.index=Math.max(0,this.items.findIndex(item=>item.preselect));
+      const selected=this.items[this.index]?.label;
+      this.items=prepareCompletions(result,this.api,offset);this.pending=false;this.index=Math.max(0,this.items.findIndex(item=>retain&&selected!==undefined?item.label===selected:item.preselect));
       if(!this.items.length){this.hide();return[];}
       this.render();this.publish();return[...this.items];
     }catch(error){if(serial===this.serial){this.hide();if(error.name!=='AbortError')this.report('completion',error);}return[];}
@@ -78,26 +92,29 @@ export class CompletionController {
   }
   render(){
     const content=document.createElement('div');
-    if(this.pending){content.setAttribute('role','status');content.className='completion-loading';content.textContent='查询补全…';}
+    if(!this.items.length){content.setAttribute('role','status');content.className='completion-loading';content.textContent='查询补全…';this.input.removeAttribute('aria-activedescendant');}
     else{
       content.id='completion-listbox';content.setAttribute('role','listbox');content.setAttribute('aria-label','补全候选');
+      content.setAttribute('aria-busy',String(this.pending));
       this.items.forEach((item,index)=>{
         const button=document.createElement('button');button.id='completion-option-'+index;button.className='completion-item';button.type='button';button.tabIndex=-1;button.setAttribute('role','option');button.dataset.index=index;
         button.setAttribute('aria-selected',String(index===this.index));
         const label=document.createElement('span');label.className='completion-label';label.textContent=item.label.slice(0,200);
-        const detail=document.createElement('span');detail.className='completion-detail';detail.textContent=item.detail.slice(0,500);button.append(label,detail);
+        const kind=document.createElement('span');kind.className='completion-kind';kind.setAttribute('aria-hidden','true');kind.textContent=({2:'m',3:'ƒ',4:'ƒ',5:'p',6:'v',7:'C',8:'I',9:'M',10:'p',12:'v',13:'E',14:'k',15:'…',21:'c',22:'S',25:'T'})[item.kind]??'·';
+        const detail=document.createElement('span');detail.className='completion-detail';detail.textContent=item.detail.slice(0,500).replace(/\s+/g,' ');button.title=[item.label.slice(0,1000),item.detail.slice(0,2000)].filter(Boolean).join('\n');button.append(kind,label,detail);
         button.addEventListener('pointerdown',event=>{if(event.button===0){event.preventDefault();this.accept(index);}});content.append(button);
       });
       this.input.setAttribute('aria-controls',content.id);
     }
-    this.widget?.dispose();this.widget=this.overlays.add({anchor:this.checkpoint.head,content,className:'completion-widget'});
+    if(this.widget){const scroll=this.widget.element.scrollTop;this.widget.update({anchor:this.checkpoint.head,retainPosition:Number(this.api.frame?.version)!==this.api.version,content});this.widget.element.scrollTop=scroll;}
+    else this.widget=this.overlays.add({anchor:this.checkpoint.head,content,className:'completion-widget'});
     this.overlays.layer.classList.add('has-completion');
     this.fit();
     this.input.setAttribute('aria-expanded','true');this.highlight();
   }
   fit(){if(!this.widget)return;this.widget.element.style.setProperty('--completion-height',Math.max(0,Math.min(260,this.overlays.viewport.clientHeight-16))+'px');this.widget.update({});}
   highlight(){
-    if(!this.widget||this.pending)return;
+    if(!this.widget||!this.items.length)return;
     this.widget.element.querySelector('[aria-selected=true]')?.setAttribute('aria-selected','false');
     const selected=this.widget.element.querySelector('#completion-option-'+this.index);selected?.setAttribute('aria-selected','true');
     if(selected){this.input.setAttribute('aria-activedescendant',selected.id);const parent=this.widget.element,top=selected.offsetTop,bottom=top+selected.offsetHeight;if(top<parent.scrollTop)parent.scrollTop=top;else if(bottom>parent.scrollTop+parent.clientHeight)parent.scrollTop=bottom-parent.clientHeight;}

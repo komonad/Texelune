@@ -2,6 +2,7 @@ import {template} from './template.js';
 import {mountEditor} from './runtime.js';
 export {themes,resolveTheme} from './theme.js';
 export {defaultKeybindings,editorCommands} from './commands.js';
+export {defaultBracketPairs} from './brackets.js';
 
 export class TexeluneEditorElement extends HTMLElement {
   constructor(){super();this.attachShadow({mode:'open'});}

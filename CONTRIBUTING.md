@@ -34,6 +34,7 @@ npx --yes --package @playwright/cli playwright-cli -s=texelune open http://127.0
 npx --yes --package @playwright/cli playwright-cli -s=texelune resize 1440 1050
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/interactions-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/completion-check.js
+npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/brackets-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/commands-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/commands-stress-check.js
 npx --yes --package @playwright/cli playwright-cli -s=texelune run-code --filename=tests/browser/definition-check.js

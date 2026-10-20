@@ -11,9 +11,11 @@ import {DiagnosticLayer} from './diagnostics.js';
 import {compileKeybindings,editorCommands} from './commands.js';
 import {CommandController} from './command-runtime.js';
 import {CompletionController} from './completion.js';
+import {BracketController,bracketPairs} from './brackets.js';
 let wasmPromise;
 
 export async function mountEditor(root,options={}){
+options={...options,bracketPairs:bracketPairs(options.bracketPairs)};
 const initialTheme=resolveTheme(options.theme);
 const controller=new AbortController(),signal=controller.signal;
 let destroyed=false,animation=0;
@@ -42,7 +44,7 @@ let lastDrawCalls=0,scrollDrag=null;
 let pendingLiveWorkerMs=0,pendingLiveUpdate=false,lastGpuRequest=-Infinity;
 let chromeScroll=NaN;
 let api,interactions,diagnostics,editPending,wordSerial=0,wordPending=new Map(),wordReads=new Set(),selectionSerial=0,selectionDrag=null,selectionAbort,documentGeneration=0;
-let commands,completion;
+let commands,completion,brackets;
 const mac=/Mac|iPhone|iPad/.test(navigator.platform);
 let keybindingOptions={...options.keybindings},keybinding=compileKeybindings(keybindingOptions,mac);
 const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(scroll-(latest?.scroll??scroll));return y+c.h>0&&y<height?{...c,y}:null;});
@@ -69,13 +71,13 @@ function edit(start,end,text,source='api',caretOffset,selectionAfter){
     commit(change);return true;
   }catch(error){reportProvider('edit',error);return false;}
 }
-function insertText(text,source='input',caretOffset){const s=currentSelection();return edit(Math.min(s.anchor,s.head),Math.max(s.anchor,s.head),text,source,caretOffset);}
+function insertText(text,source='input',caretOffset){const s=currentSelection(),start=Math.min(s.anchor,s.head),end=Math.max(s.anchor,s.head);return source==='input'&&brackets?brackets.input(text,start,end):edit(start,end,text,source,caretOffset);}
 async function insertNewline(){
   cancelEdit();const abort=editPending=new AbortController(),revision=version(),s=currentSelection(),start=Math.min(s.anchor,s.head),end=Math.max(s.anchor,s.head);
   const position=editor.position_at(start),range=editor.line_range(position.line);
   const nextLine=editor.line_range(editor.position_at(end).line);
   const prefix=editor.slice(range[0],Math.min(start,range[0]+4096)),leadingWhitespace=prefix.match(/^[\t ]*/)[0];
-  const context={editor:api,version:revision,selection:s,position,before:editor.slice(Math.max(range[0],start-4096),start),after:editor.slice(end,Math.min(nextLine[1],end+4096)),leadingWhitespace,indentUnit:options.indentUnit??'    ',truncated:start-range[0]>4096||nextLine[1]-end>4096,signal:abort.signal};
+  const context={editor:api,version:revision,selection:s,position,before:editor.slice(Math.max(range[0],start-4096),start),after:editor.slice(end,Math.min(nextLine[1],end+4096)),leadingWhitespace,indentUnit:options.indentUnit??'    ',bracketPairs:options.bracketPairs,truncated:start-range[0]>4096||nextLine[1]-end>4096,signal:abort.signal};
   try{
     const strategy=options.autoIndent??'keep';
     const result=typeof strategy==='function'?await deadline(()=>strategy(context),abort.signal,options.providerTimeout??8000):indentInsertion(context,strategy);
@@ -325,7 +327,7 @@ function startNavigation(){
     if(m.version!==version())return;
     const s=currentSelection();if(s.head!==m.selection.head||s.anchor!==m.selection.anchor)return;
     if(m.action==='delete')edit(Math.min(s.head,m.position),Math.max(s.head,m.position),'','delete');
-    else{editor.select(m.extend?s.anchor:m.position,m.position);selectionChanged();}
+    else{editor.select(m.extend?s.anchor:m.position,m.position);selectionChanged();if(m.action==='bracket')api.reveal();}
     notice('Grapheme boundary resolved');
   };
   navigation.postMessage({type:'init',source:initialSource,changes:[...changes]});
@@ -372,6 +374,7 @@ function updateChrome(){
   positionInput();
   overlays.update(overlays.range?latest.navigation.cells:[],delta);
   diagnostics?.render();
+  brackets?.render();
 }
 function loop(time){
   if(destroyed)return;
@@ -520,6 +523,11 @@ async function executeCommand(command){
   if(command==='acceptCompletion')return completion.accept();
   if(command==='nextCompletion'||command==='previousCompletion')return completion.move(command==='nextCompletion'?1:-1);
   if(command==='hideCompletion'){completion.hide();return true;}
+  if(command==='goToBracket'){
+    const s=currentSelection(),revision=version();
+    try{const match=await brackets.find(s.head);if(!match||version()!==revision||currentSelection().anchor!==s.anchor||currentSelection().head!==s.head)return false;const target=s.head>=match.close.start?match.open.start:match.close.start;editor.select(target,target);selectionChanged();api.reveal(target);return true;}
+    catch(error){if(error.name!=='AbortError')reportProvider('brackets',error);return false;}
+  }
   if(command==='selectAll'){editor.select(0,editor.length());selectionChanged();return true;}
   if(command==='undo'||command==='redo'){const change=editor[command]();commit(change);return !!change;}
   if(['bold','italic','underline'].includes(command)){intent(()=>applyToggle(command));return true;}
@@ -529,7 +537,7 @@ async function executeCommand(command){
     cancelMotions();const p=command.endsWith('End')?editor.length():0;editor.select(command.startsWith('select')?currentSelection().anchor:p,p);selectionChanged();post({type:'selection',selection:currentSelection(),reveal:true,affinity:null});return true;
   }
   if(command==='deleteLeft'||command==='deleteRight'){intent(()=>deleteText(command==='deleteRight'));return true;}
-  if(command==='cancel'){cancelMotions();cancelEdit();completion?.hide();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
+  if(command==='cancel'){cancelMotions();cancelEdit();completion?.hide();brackets?.cancel();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
   if(command==='goToDefinition'){if(!options.definitionProvider)return false;await interactions.go();return true;}
   if(command==='nextDiagnostic'||command==='previousDiagnostic')return !!goToDiagnostic(command==='nextDiagnostic'?1:-1);
   if(command==='toggleFullscreen'){await toggleFullscreen();return true;}
@@ -563,7 +571,7 @@ input.addEventListener('beforeinput',e=>{
 });
 input.addEventListener('compositionstart',()=>{
   cancelMotions();editor.begin_composition();
-  const s=currentSelection();composition={start:Math.min(s.anchor,s.head),end:Math.max(s.anchor,s.head),text:''};input.value='';
+  const s=currentSelection();composition={start:Math.min(s.anchor,s.head),end:Math.max(s.anchor,s.head),collapsed:s.anchor===s.head,text:''};input.value='';
 });
 input.addEventListener('compositionupdate',e=>{
   if(!composition)return;
@@ -573,7 +581,7 @@ input.addEventListener('compositionend',e=>{
   if(!composition)return;
   // Some input methods report the final candidate only on compositionend.
   const start=composition.start,end=composition.end;
-  if(composition.text!==e.data)edit(start,end,e.data,'composition');
+  if(composition.text!==e.data||options.bracketPairs.some(pair=>pair.open===e.data||pair.close===e.data))brackets.input(e.data,start,end,'composition',composition.collapsed);
   editor.end_composition();composition=null;input.value='';
 });
 input.addEventListener('input',e=>{
@@ -606,7 +614,7 @@ const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(viewport)
 function dispose(){
   if(destroyed)return;destroyed=true;ready=false;controller.abort();importEpoch++;rendererGeneration++;
   clearTimeout(restartTimer);cancelAnimationFrame(animation);resizeObserver.disconnect();performancePanel.destroy();
-  cancelEdit();selectionAbort?.abort();completion?.destroy();interactions?.destroy();diagnostics?.destroy();overlays.destroy();cancelWords();
+  cancelEdit();selectionAbort?.abort();completion?.destroy();brackets?.destroy();interactions?.destroy();diagnostics?.destroy();overlays.destroy();cancelWords();
   benchmarkRunner.cancel();worker?.terminate();navigation?.terminate();visual?.free();editor?.free();renderer?.free();
   renderer=null;editor=null;visual=null;root.replaceChildren();emit('dispose',null);
 }
@@ -641,14 +649,16 @@ async function boot(){
       positionAt(offset){return editor.position_at(offset);},offsetAt(position){return editor.offset_at(position.line,position.character);},
       replace(start,end,text){return edit(start,end,text);},
       applyEdit(request,expectedVersion=version()){return expectedVersion===version()&&edit(request.start,request.end,request.text,request.source??'api',request.caretOffset);},
-      configure(value){if(destroyed)return;const bindings='keybindings' in value?{...value.keybindings}:keybindingOptions;const compiled=compileKeybindings(bindings,mac);options={...options,...value};keybindingOptions=bindings;keybinding=compiled;cancelEdit();completion?.hide();interactions?.changed();cancelWords();},
-      get configuration(){return Object.fromEntries(['autoIndent','indentUnit','hoverDelay','providerTimeout','keybindings','middleClickDefinition','automaticCompletion','completionDelay','completionProvider','wordProvider','hoverProvider','definitionProvider','onBeforeEdit','onChange','onSelectionChange','onKeyDown','onNavigate'].map(key=>[key,key==='keybindings'?{...keybindingOptions}:options[key]??({autoIndent:'keep',indentUnit:'    ',hoverDelay:350,providerTimeout:8000,middleClickDefinition:true,automaticCompletion:true,completionDelay:120}[key])]));},
+      configure(value){if(destroyed)return;const bindings='keybindings' in value?{...value.keybindings}:keybindingOptions;const compiled=compileKeybindings(bindings,mac),pairs='bracketPairs'in value?bracketPairs(value.bracketPairs):options.bracketPairs;options={...options,...value,bracketPairs:pairs};keybindingOptions=bindings;keybinding=compiled;cancelEdit();completion?.hide();brackets?.refresh();interactions?.changed();cancelWords();},
+      get configuration(){return Object.fromEntries(['bracketPairs','autoClosingBrackets','skipClosingBrackets','bracketMatching','bracketMatchingProvider','autoIndent','indentUnit','hoverDelay','providerTimeout','keybindings','middleClickDefinition','automaticCompletion','completionDelay','completionProvider','wordProvider','hoverProvider','definitionProvider','onBeforeEdit','onChange','onSelectionChange','onKeyDown','onNavigate'].map(key=>[key,key==='keybindings'?{...keybindingOptions}:options[key]??({autoClosingBrackets:true,skipClosingBrackets:true,bracketMatching:true,autoIndent:'keep',indentUnit:'    ',hoverDelay:350,providerTimeout:8000,middleClickDefinition:true,automaticCompletion:true,completionDelay:120}[key])]));},
       executeCommand,
       triggerCompletion(){return completion.trigger();},
       acceptCompletion(index){return completion.accept(index);},
       hideCompletion(){completion.hide();},
       get completion(){return completion.state;},
       lineRange,wordRange,
+      matchBrackets(offset=currentSelection().head,signal){return brackets.find(offset,signal);},
+      skipClosingBracket(close){return brackets.skip(close);},
       addOverlay:value=>overlays.add(value),
       showHover(content,anchor=currentSelection().head){interactions.show(content,anchor);},
       hideHover(){interactions.reset();},
@@ -684,6 +694,7 @@ async function boot(){
       },
     };
     commands=new CommandController({api,options:()=>options,report:reportProvider,edit(...args){commands.release();return edit(...args);}});
+    brackets=new BracketController({api,options:()=>options,edit,advance(){if(editor.horizontal(true,false)){selectionChanged();api.reveal();}else deferBoundary(true,'bracket');},report:reportProvider});
     completion=new CompletionController({api,options:()=>options,overlays,report:reportProvider,emit,edit});
     diagnostics=new DiagnosticLayer(api,viewport,$('numbers'),$('diagnostic-summary'));
     interactions=new Interactions({api,options:()=>options,overlays,wordRange,diagnosticHover:offset=>diagnostics.hover(offset),report:reportProvider});

@@ -1,4 +1,4 @@
-import {createEditor, type EditorAPI, type IndentContext, type TextRange} from '../packages/editor/index.js';
+import {createEditor, defaultBracketPairs, type EditorAPI, type IndentContext, type TextRange, type BracketMatch} from '../packages/editor/index.js';
 import {LspClient} from '../packages/editor/lsp.js';
 
 export function workerLanguage(editor: EditorAPI, workerUrl: string) {
@@ -37,6 +37,12 @@ export async function mount(container: HTMLElement, workspace: {rootUri: string;
   editor.configure({autoIndent: async (context: IndentContext) => ({text: '\n' + context.leadingWhitespace})});
   editor.configure({wordProvider: undefined});
   editor.configure({automaticCompletion:true,completionDelay:120});
+  editor.configure({bracketPairs:[...defaultBracketPairs,{open:'⟦',close:'⟧'}],autoClosingBrackets:true,skipClosingBrackets:true,bracketMatching:true});
+  const match: BracketMatch | null = await editor.matchBrackets(0, new AbortController().signal);
+  if (match) editor.reveal(match.close.start);
+  editor.skipClosingBracket(')');
+  await editor.executeCommand('goToBracket');
+  editor.configure({bracketMatchingProvider:undefined,bracketPairs:undefined});
   const candidates = await editor.triggerCompletion();
   if (candidates.length) editor.acceptCompletion(0);
   editor.hideCompletion();

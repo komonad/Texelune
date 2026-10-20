@@ -18,7 +18,7 @@ export const defaultKeybindings=Object.freeze({
   'Mod+Plus':'increaseFontSize','Mod+=':'increaseFontSize','Mod+Shift+Plus':'increaseFontSize','Mod+-':'decreaseFontSize','Mod+0':'resetFontSize',
   'Alt+p':'togglePerformance','Alt+Enter':'toggleFullscreen',
 });
-export const editorCommands=Object.freeze([...new Set(Object.values(defaultKeybindings)),'acceptCompletion','nextCompletion','previousCompletion','hideCompletion']);
+export const editorCommands=Object.freeze([...new Set(Object.values(defaultKeybindings)),'acceptCompletion','nextCompletion','previousCompletion','hideCompletion','goToBracket']);
 const aliases={arrowleft:'left',arrowright:'right',arrowup:'up',arrowdown:'down',esc:'escape',return:'enter',' ':'space','+':'plus',control:'ctrl',cmd:'meta',command:'meta',option:'alt'};
 const keyName=key=>aliases[key.toLowerCase()]??key.toLowerCase();
 export function compileKeybindings(overrides={},mac=false){

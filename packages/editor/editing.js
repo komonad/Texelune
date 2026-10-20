@@ -3,11 +3,12 @@ export const scalarLength=text=>[...text].length;
 export function indentInsertion(context,strategy='keep'){
   const {before,after,leadingWhitespace,indentUnit}=context;
   if(strategy==='none')return{text:'\n'};
-  const open=before.trimEnd().at(-1),close=after.trimStart()[0];
-  const pair={'{':'}','[':']','(':')'};
-  const expanded=strategy==='brackets'&&open in pair;
+  const open=[...before.trimEnd()].at(-1),close=[...after.trimStart()][0];
+  const pairs=context.bracketPairs??[{open:'{',close:'}'},{open:'[',close:']'},{open:'(',close:')'}];
+  const pair=pairs.find(pair=>pair.open===open);
+  const expanded=strategy==='brackets'&&!!pair;
   const prefix='\n'+leadingWhitespace+(expanded?indentUnit:'');
-  if(expanded&&pair[open]===close)return{text:prefix+'\n'+leadingWhitespace,caretOffset:scalarLength(prefix)};
+  if(expanded&&pair.close===close)return{text:prefix+'\n'+leadingWhitespace,caretOffset:scalarLength(prefix)};
   return{text:prefix};
 }
 

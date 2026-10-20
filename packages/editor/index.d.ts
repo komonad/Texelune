@@ -8,6 +8,8 @@ export interface Selection { anchor: number; head: number; }
 export interface Highlight { start: number; end: number; style: TextStyle; }
 export interface Inlay { anchor: number; text: string; block: boolean; }
 export interface TextRange { start: number; end: number; }
+export interface BracketPair { readonly open: string; readonly close: string; }
+export interface BracketMatch { open: TextRange; close: TextRange; }
 export interface EditorDiagnostic extends TextRange { message: string; severity?: 1 | 2 | 3 | 4; source?: string; code?: string | number; tags?: ReadonlyArray<1 | 2>; }
 export interface LspRange { start: Position; end: Position; }
 export interface NavigationTarget { uri?: string; range?: LspRange; selectionRange?: LspRange; start?: number; end?: number; originRange?: TextRange; }
@@ -18,7 +20,7 @@ export interface CompletionContext extends ProviderContext { triggerKind: 'invok
 export interface CompletionItem { label: string; text?: string; start?: number; end?: number; detail?: string; filterText?: string; sortText?: string; preselect?: boolean; kind?: number; snippet?: boolean; additionalEdits?: boolean; }
 export interface ResolvedCompletion extends CompletionItem { start: number; end: number; text: string; detail: string; }
 export interface CompletionState { readonly visible: boolean; readonly pending: boolean; readonly index: number; readonly items: ReadonlyArray<Readonly<ResolvedCompletion>>; }
-export interface IndentContext { editor: EditorAPI; version: number; selection: Selection; position: Position; before: string; after: string; leadingWhitespace: string; indentUnit: string; truncated: boolean; signal: AbortSignal; }
+export interface IndentContext { editor: EditorAPI; version: number; selection: Selection; position: Position; before: string; after: string; leadingWhitespace: string; indentUnit: string; bracketPairs: ReadonlyArray<BracketPair>; truncated: boolean; signal: AbortSignal; }
 export interface IndentInsertion { text: string; caretOffset?: number; }
 export type AutoIndent = 'none' | 'keep' | 'brackets' | ((context: IndentContext) => string | IndentInsertion | null | Promise<string | IndentInsertion | null>);
 export interface EditRequest { start: number; end: number; text: string; source?: string; caretOffset?: number; }
@@ -31,13 +33,18 @@ export type EditorCommand =
   | 'cursorLeft' | 'cursorRight' | 'cursorUp' | 'cursorDown' | 'selectLeft' | 'selectRight' | 'selectUp' | 'selectDown'
   | 'cursorLineStart' | 'cursorLineEnd' | 'selectLineStart' | 'selectLineEnd'
   | 'cursorDocumentStart' | 'cursorDocumentEnd' | 'selectDocumentStart' | 'selectDocumentEnd'
-  | 'deleteLeft' | 'deleteRight' | 'cancel' | 'goToDefinition' | 'nextDiagnostic' | 'previousDiagnostic'
+  | 'deleteLeft' | 'deleteRight' | 'cancel' | 'goToDefinition' | 'goToBracket' | 'nextDiagnostic' | 'previousDiagnostic'
   | 'triggerCompletion' | 'acceptCompletion' | 'nextCompletion' | 'previousCompletion' | 'hideCompletion'
   | 'increaseFontSize' | 'decreaseFontSize' | 'resetFontSize' | 'togglePerformance' | 'toggleFullscreen';
 export interface KeybindingContext { editor: EditorAPI; event: KeyboardEvent; signal: AbortSignal; }
 export type KeybindingHandler = (context: KeybindingContext) => void | boolean | Promise<void | boolean>;
 export type Keybindings = Record<string, EditorCommand | KeybindingHandler | null>;
 export interface EditorExtensions {
+  bracketPairs?: ReadonlyArray<BracketPair>;
+  autoClosingBrackets?: boolean;
+  skipClosingBrackets?: boolean;
+  bracketMatching?: boolean;
+  bracketMatchingProvider?: (context: ProviderContext) => BracketMatch | null | Promise<BracketMatch | null>;
   autoIndent?: AutoIndent;
   indentUnit?: string;
   hoverDelay?: number;
@@ -113,6 +120,8 @@ export interface EditorAPI {
   readonly configuration: Readonly<EditorConfiguration>;
   lineRange(line: number): TextRange;
   wordRange(offset: number, signal?: AbortSignal): Promise<TextRange>;
+  matchBrackets(offset?: number, signal?: AbortSignal): Promise<BracketMatch | null>;
+  skipClosingBracket(close?: string): boolean;
   addOverlay(options: OverlayOptions): OverlayHandle;
   showHover(content: string | Node, anchor?: number): void;
   hideHover(): void;
@@ -152,3 +161,4 @@ export const themes: Record<'paper' | 'dusk', Theme>;
 export function resolveTheme(theme?: string | Theme): ResolvedTheme;
 export const defaultKeybindings: Readonly<Record<string, EditorCommand>>;
 export const editorCommands: ReadonlyArray<EditorCommand>;
+export const defaultBracketPairs: ReadonlyArray<BracketPair>;

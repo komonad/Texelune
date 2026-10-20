@@ -18,7 +18,8 @@ export class OverlayLayer {
     return{element,update,dispose:()=>{this.items.delete(item);element.remove();}};
   }
   position(item){
-    const hit=this.resolve(item.anchor),element=item.element;
+    const hit=item.retainPosition&&item.lastHit?item.lastHit:this.resolve(item.anchor),element=item.element;
+    if(hit)item.lastHit=hit;
     element.hidden=!hit;if(!hit)return;
     const width=this.viewport.clientWidth,height=this.viewport.clientHeight;
     element.style.maxWidth=Math.max(0,width-32)+'px';

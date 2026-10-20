@@ -35,7 +35,13 @@ Events include `change`, `documentchange`, `selectionchange`, `completionchange`
 
 `LspClient.attach()` installs an asynchronous completion provider with the hover, definition and diagnostic bindings. Ctrl/Meta+Space requests candidates beside the caret; typing identifiers, `.` or `:` requests after a configurable debounce. Up/Down choose a candidate, Enter/Tab accept and Escape closes the list. Pointer selection retains input focus. Theme colors apply to the popup.
 
-Use `completionProvider`, `automaticCompletion` and `completionDelay` for custom sources, and `triggerCompletion()`, `acceptCompletion()`, `hideCompletion()` or the corresponding keyboard commands for application controls. `completion` and `completionchange` expose pending state and candidates. Document or selection changes cancel requests; candidates never apply across read versions. Acceptance runs through edit hooks as one undoable replacement. Snippets and candidates requiring additional edits are excluded. See the [completion contract](API.md#补全) for bounds and cancellation semantics.
+Use `completionProvider`, `automaticCompletion` and `completionDelay` for custom sources, and `triggerCompletion()`, `acceptCompletion()`, `hideCompletion()` or the corresponding keyboard commands for application controls. `completion` and `completionchange` expose pending state and candidates. Document or selection changes cancel requests. Typing and deletion inside resident replacement ranges map those candidates to the current version and filter them while awaiting the next batch. The popup container stays mounted during refresh, retaining selection and scroll where possible. Rows align kind, label and detail columns. Acceptance runs through edit hooks as one undoable replacement. Snippets and candidates requiring additional edits are excluded. See the [completion contract](API.md#补全) for bounds and cancellation semantics.
+
+## Brackets
+
+Configurable `bracketPairs` define distinct single-scalar endpoints, including fullwidth brackets. Empty-selection input automatically closes opening brackets; typing the existing closing bracket advances the caret. `autoClosingBrackets` and `skipClosingBrackets` independently control these behaviors. IME pairing takes place on commit. API edits and paste preserve literal text.
+
+`bracketMatching` highlights the pair near the caret using visual cell geometry. `matchBrackets(offset?,signal?)` performs a cancellable, bounded-slice asynchronous scan, and `skipClosingBracket(close?)` exposes the closing-bracket action. Bind `goToBracket` through `keybindings` for navigation. `bracketMatchingProvider` accepts syntax-aware results from an application or Worker; the default lexical matcher includes brackets in comments and strings. See the [bracket contract](API.md#括号) for defaults, coordinate rules and limits.
 
 ## Diagnostics
 

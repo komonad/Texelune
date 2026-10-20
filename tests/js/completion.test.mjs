@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {completionPrefix,prepareCompletions} from '../../packages/editor/completion.js';
+import {completionPrefix,prepareCompletions,advanceCompletions} from '../../packages/editor/completion.js';
 import {normalizeCompletions} from '../../packages/editor/completion-protocol.js';
 
 const editor=text=>({documentInfo:{chars:[...text].length},slice:(a,b)=>[...text].slice(a,b).join('')});
+test('resident completion replacements follow typing and deletion before asynchronous refresh',()=>{
+  const items=prepareCompletions([{label:'greeting'},{label:'group'}],editor('gr'),2);
+  const typed=advanceCompletions(items,{start:2,end:2,text:'e'},editor('gre'),3);
+  assert.deepEqual(typed.map(item=>[item.label,item.start,item.end]),[['greeting',0,3]]);
+  const removed=advanceCompletions(typed,{start:2,end:3,text:''},editor('gr'),2);
+  assert.equal(removed[0].end,2);
+  assert.deepEqual(advanceCompletions(items,{start:0,end:2,text:'x'},editor('x'),1),[]);
+  assert.deepEqual(advanceCompletions(items,{start:2,end:2,text:'.'},editor('gr.'),3),[]);
+});
 test('completion ranges use scalar offsets after emoji and preserve Unicode identifier prefixes',()=>{
   const e=editor('👩🏽‍💻 αβ');assert.deepEqual(completionPrefix(e,7),{start:5,end:7});
   const result=prepareCompletions([{label:'αβγ',text:'αβγ'},{label:'other'}],e,7);

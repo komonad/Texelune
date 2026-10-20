@@ -103,6 +103,10 @@ Display cadence and offscreen throughput do not establish an editing latency SLO
 
 ## Browser regression
 
+The bracket/completion scenario covers ASCII and fullwidth pairing, grouped undo/redo, committed composition, custom astral endpoints, shared indentation definitions, BiDi match geometry, edit interception and cancellation across document replacement. Closing-bracket traversal preserves combining graphemes, including a 20,000-mark cluster resolved by the navigation Worker. A 100MiB unmatched bracket query yields to the event loop and cancels without constructing a full document string.
+
+Completion refresh is observed with a retained DOM reference, removal observer and visibility sampling through typing, Backspace and a delayed provider. Resident candidates accept against mapped current replacement ranges before the next response. The scenario detects no popup replacement or hidden interval. Native rust-analyzer completion, static TypeScript Worker completion, viewport-edge placement, keyboard and mouse acceptance also pass.
+
 The browser scenarios exercise real keyboard events and editor controls, with the development API used to load fixtures and inspect document state:
 
 - Insert, Backspace, undo and redo.
