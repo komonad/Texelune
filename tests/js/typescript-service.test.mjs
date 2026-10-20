@@ -36,8 +36,11 @@ test('browser TypeScript service returns real type errors and prefix replacement
   assert(diagnostics.some(item=>item.code===2322&&item.severity===1));
   const item=service.handle('textDocument/completion',{textDocument:{uri},position:{line:2,character:5}}).items.find(item=>item.label==='greeting');
   assert.deepEqual(item.textEdit,{range:{start:{line:2,character:0},end:{line:2,character:5}},newText:'greeting'});
+  service.handle('textDocument/didChange',{textDocument:{uri,version:2},contentChanges:[{text:'const greeting = "hi";\ngreeting'}]});
+  const middle=service.handle('textDocument/completion',{textDocument:{uri},position:{line:1,character:3}}).items.find(item=>item.label==='greeting');
+  assert.deepEqual(middle.textEdit,{range:{start:{line:1,character:0},end:{line:1,character:8}},newText:'greeting'});
   service.handle('textDocument/didChange',{textDocument:{uri,version:0},contentChanges:[{text:'stale'}]});
-  assert(service.document(uri).text.includes('greet'));
+  assert(service.document(uri).text.includes('greeting'));
   service.handle('textDocument/didClose',{textDocument:{uri}});
   assert.throws(()=>service.document(uri),/not open/);
   service.handle('shutdown',{});

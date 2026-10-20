@@ -77,7 +77,10 @@ export class TypeScriptService {
       const result=this.service.getCompletionsAtPosition(path,offset,{includeCompletionsForModuleExports:false,includeCompletionsWithInsertText:true});
       let start=offset;while(start>0){let previous=start-1;const unit=file.text.charCodeAt(previous);if(unit>=0xdc00&&unit<=0xdfff&&previous>0)previous--;if(!/[\p{ID_Continue}$]/u.test(file.text.slice(previous,start)))break;start=previous;}
       const prefix=file.text.slice(start,offset);
-      return{isIncomplete:false,items:(result?.entries??[]).filter(entry=>entry.name.toLowerCase().startsWith(prefix.toLowerCase())).slice(0,80).map(entry=>({label:entry.name,detail:entry.kind,textEdit:{range:entry.replacementSpan?this.range(file,entry.replacementSpan.start,entry.replacementSpan.length):this.range(file,start,offset-start),newText:entry.insertText??entry.name}}))};
+      return{isIncomplete:false,items:(result?.entries??[]).filter(entry=>entry.name.normalize('NFC').toLowerCase().startsWith(prefix.normalize('NFC').toLowerCase())).slice(0,80).map(entry=>{
+        const span=entry.replacementSpan??result.optionalReplacementSpan??{start,length:offset-start};
+        return{label:entry.name,detail:entry.kind,textEdit:{range:this.range(file,span.start,span.length),newText:entry.insertText??entry.name}};
+      })};
     }
     const error=new Error('Unsupported LSP method: '+method);error.code=-32601;throw error;
   }

@@ -1,4 +1,5 @@
 async page=>{
+  await page.context().route('**/*',route=>route.continue());
   const assert=(value,message)=>{if(!value)throw new Error(message);};
   const failures=[],backend=[];
   page.on('pageerror',error=>failures.push(error.message));
@@ -41,6 +42,9 @@ async page=>{
   assert(await page.evaluate(()=>{const e=window.texelune,r=e.root.querySelector('[role=option]').getBoundingClientRect();return !!e.root.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('.completion-widget');}),'completion remains clickable above the performance panel');
   await page.screenshot({path:'D:/dev/Texelune/output/playwright/completion-typescript.png'});
   assert(await page.evaluate(()=>{const e=window.texelune;return e.acceptCompletion(e.completion.items.findIndex(item=>item.label==='colors'))&&e.text.endsWith('palette.colors');}),'a member-access trigger queries and applies a TypeScript property');
+  await page.evaluate(()=>{const e=window.texelune;e.select(e.documentInfo.chars-3,e.documentInfo.chars-3);e.focus();});
+  const middle=await page.evaluate(async()=>{const e=window.texelune;await e.triggerCompletion();return e.acceptCompletion(e.completion.items.findIndex(item=>item.label==='colors'))&&e.text.endsWith('palette.colors');});
+  assert(middle,'completion inside an existing property replaces the complete identifier without duplicating its suffix');
   const timeout=await page.evaluate(async()=>{
     const {LspClient}=await import('../packages/editor/lsp.js');
     const workerUrl=URL.createObjectURL(new Blob([`self.onmessage=({data:m})=>{if(m.method==='initialize')postMessage({jsonrpc:'2.0',id:m.id,result:{capabilities:{positionEncoding:'utf-16',textDocumentSync:2,hoverProvider:true}}});};`],{type:'text/javascript'}));
