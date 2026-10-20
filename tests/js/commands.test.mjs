@@ -104,5 +104,8 @@ test('asynchronous cut never deletes after cancellation or a denied clipboard wr
     navigator.clipboard.writeText=()=>Promise.reject(new DOMException('Denied','NotAllowedError'));
     assert.equal(await controller.clipboard('cut'),false);assert.equal(edits.length,0);
     assert.equal(errors[0].kind,'clipboard');assert.equal(errors[0].error.name,'NotAllowedError');
+    const cancelled=controller.clipboard('cut');controller.cancel();
+    assert.equal(await cancelled,false);await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(edits.length,0);assert.equal(errors.length,1);
   }finally{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator;}
 });

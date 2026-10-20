@@ -87,7 +87,8 @@ export class CommandController {
         else throw new Error('Clipboard read is unavailable');
       }else{
         if(navigator.clipboard?.write&&globalThis.ClipboardItem){
-          const data={'text/plain':this.blob(range,context)};
+          const payload=this.blob(range,context);payload.catch(()=>{});
+          const data={'text/plain':payload};
           if(range.linewise&&ClipboardItem.supports?.(webClipboardFormat))data[webClipboardFormat]=new Blob(['1'],{type:clipboardFormat});
           operation=navigator.clipboard.write([new ClipboardItem(data)]);
         }else if(navigator.clipboard?.writeText&&range.end-range.start<=smallRange){
@@ -99,6 +100,7 @@ export class CommandController {
         });
       }
     }catch(error){operation=Promise.reject(error);}
+    operation.catch(()=>{});
     return deadline(()=>operation,abort.signal,this.a.options().providerTimeout??8000).catch(error=>{abort.abort();if(error.name!=='AbortError')this.a.report('clipboard',error);return false;}).finally(()=>{if(this.pending===abort)this.pending=null;});
   }
   async plan(command,range,context){
