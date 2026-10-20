@@ -16,10 +16,11 @@ Status: experimental, pre-1.0. The component is a private workspace distributed 
 - Extended grapheme clusters, font fallback, Arabic shaping, RTL/BiDi visual caret movement and soft wrapping.
 - Foreground/background colors, bold, italic, underline, inline hints and block inlays.
 - Hover widgets, Ctrl/Meta hover links, definitions, logical-line gutter selection and double-click word selection.
-- Edit interception, typed events, keyboard handlers and asynchronous hover/definition/word/indent providers.
+- Edit interception, typed events, keyboard handlers and asynchronous hover/definition/completion/word/indent providers.
 - Viewport virtualization, streamed 100MiB fixtures and windowed layout for long ASCII lines.
 - Themes, font-size controls, fullscreen, draggable scrollbars and in-editor performance diagnostics.
-- An optional LSP adapter for semantic highlights, diagnostics, hover, definitions and completion results.
+- An optional LSP adapter for semantic highlights, diagnostics, hover, definitions and completion.
+- Asynchronous completion beside the caret, automatic/manual queries, configurable providers and keyboard/pointer acceptance.
 - Diagnostic underlines, gutter marks, hover messages, severity counts and F8 navigation.
 
 ## Run from a fresh clone

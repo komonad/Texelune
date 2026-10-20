@@ -10,6 +10,7 @@ import {Interactions} from './interactions.js';
 import {DiagnosticLayer} from './diagnostics.js';
 import {compileKeybindings,editorCommands} from './commands.js';
 import {CommandController} from './command-runtime.js';
+import {CompletionController} from './completion.js';
 let wasmPromise;
 
 export async function mountEditor(root,options={}){
@@ -41,7 +42,7 @@ let lastDrawCalls=0,scrollDrag=null;
 let pendingLiveWorkerMs=0,pendingLiveUpdate=false,lastGpuRequest=-Infinity;
 let chromeScroll=NaN;
 let api,interactions,diagnostics,editPending,wordSerial=0,wordPending=new Map(),wordReads=new Set(),selectionSerial=0,selectionDrag=null,selectionAbort,documentGeneration=0;
-let commands;
+let commands,completion;
 const mac=/Mac|iPhone|iPad/.test(navigator.platform);
 let keybindingOptions={...options.keybindings},keybinding=compileKeybindings(keybindingOptions,mac);
 const overlays=new OverlayLayer(viewport,offset=>{const c=visual?.resolve(offset,null);if(!c)return null;const y=c.y-(scroll-(latest?.scroll??scroll));return y+c.h>0&&y<height?{...c,y}:null;});
@@ -61,6 +62,7 @@ function edit(start,end,text,source='api',caretOffset,selectionAfter){
     if(!Number.isSafeInteger(request.start)||!Number.isSafeInteger(request.end)||request.start<0||request.end<request.start||request.end>editor.length()||typeof request.text!=='string')throw new RangeError('Invalid edit range');
     if(request.caretOffset!==undefined&&(!Number.isSafeInteger(request.caretOffset)||request.caretOffset<0))throw new RangeError('Invalid caret offset');
     const change=editor.replace(request.start,request.end,request.text);
+    change.source=request.source;
     const relative=request.caretOffset;
     if(relative!==undefined){const position=request.start+Math.max(0,Math.min(scalarLength(request.text),relative));editor.select(position,position);change.selection=currentSelection();}
     else if(selectionAfter&&request.start===start&&request.end===end&&request.text===text){editor.select(Math.max(0,Math.min(editor.length(),selectionAfter.anchor)),Math.max(0,Math.min(editor.length(),selectionAfter.head)));change.selection=currentSelection();}
@@ -244,6 +246,7 @@ function resize(){
 }
 function setScroll(value){
   interactions?.reset();
+  completion?.hide();
   const max=Math.max(0,(latest?.total_height||height)-height);
   scroll=Math.max(0,Math.min(max,value));sendView();dirty=true;
 }
@@ -513,6 +516,10 @@ async function executeCommand(command){
     return insertText(options.indentUnit??'    ','tab');
   }
   if(command==='insertNewline')return insertNewline();
+  if(command==='triggerCompletion'){await completion.trigger();return true;}
+  if(command==='acceptCompletion')return completion.accept();
+  if(command==='nextCompletion'||command==='previousCompletion')return completion.move(command==='nextCompletion'?1:-1);
+  if(command==='hideCompletion'){completion.hide();return true;}
   if(command==='selectAll'){editor.select(0,editor.length());selectionChanged();return true;}
   if(command==='undo'||command==='redo'){const change=editor[command]();commit(change);return !!change;}
   if(['bold','italic','underline'].includes(command)){intent(()=>applyToggle(command));return true;}
@@ -522,7 +529,7 @@ async function executeCommand(command){
     cancelMotions();const p=command.endsWith('End')?editor.length():0;editor.select(command.startsWith('select')?currentSelection().anchor:p,p);selectionChanged();post({type:'selection',selection:currentSelection(),reveal:true,affinity:null});return true;
   }
   if(command==='deleteLeft'||command==='deleteRight'){intent(()=>deleteText(command==='deleteRight'));return true;}
-  if(command==='cancel'){cancelMotions();cancelEdit();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
+  if(command==='cancel'){cancelMotions();cancelEdit();completion?.hide();interactions?.changed();if(fullscreenActive())await toggleFullscreen();return true;}
   if(command==='goToDefinition'){if(!options.definitionProvider)return false;await interactions.go();return true;}
   if(command==='nextDiagnostic'||command==='previousDiagnostic')return !!goToDiagnostic(command==='nextDiagnostic'?1:-1);
   if(command==='toggleFullscreen'){await toggleFullscreen();return true;}
@@ -535,7 +542,9 @@ function keyDown(e){
   if(e.defaultPrevented)return;
   try{if(options.onKeyDown?.(e,api)===true){e.preventDefault();return;}}catch(error){reportProvider('keydown',error);}
   if(e.defaultPrevented)return;
-  const command=keybinding(e);if(command===undefined)return;
+  const command=keybinding(e);
+  if(!keybinding.isOverridden(e)&&completion?.keyDown(e))return;
+  if(command===undefined)return;
   if(typeof command==='string'&&['copy','cut','paste'].includes(command)){
     const key=e.key.toLowerCase(),native=(e.ctrlKey||e.metaKey)&&({c:'copy',x:'cut',v:'paste'})[key]===command||key==='insert'&&(e.ctrlKey&&command==='copy'||e.shiftKey&&command==='paste')||key==='delete'&&e.shiftKey&&command==='cut';
     if(native)return;
@@ -597,7 +606,7 @@ const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(viewport)
 function dispose(){
   if(destroyed)return;destroyed=true;ready=false;controller.abort();importEpoch++;rendererGeneration++;
   clearTimeout(restartTimer);cancelAnimationFrame(animation);resizeObserver.disconnect();performancePanel.destroy();
-  cancelEdit();selectionAbort?.abort();interactions?.destroy();diagnostics?.destroy();overlays.destroy();cancelWords();
+  cancelEdit();selectionAbort?.abort();completion?.destroy();interactions?.destroy();diagnostics?.destroy();overlays.destroy();cancelWords();
   benchmarkRunner.cancel();worker?.terminate();navigation?.terminate();visual?.free();editor?.free();renderer?.free();
   renderer=null;editor=null;visual=null;root.replaceChildren();emit('dispose',null);
 }
@@ -632,9 +641,13 @@ async function boot(){
       positionAt(offset){return editor.position_at(offset);},offsetAt(position){return editor.offset_at(position.line,position.character);},
       replace(start,end,text){return edit(start,end,text);},
       applyEdit(request,expectedVersion=version()){return expectedVersion===version()&&edit(request.start,request.end,request.text,request.source??'api',request.caretOffset);},
-      configure(value){if(destroyed)return;const bindings='keybindings' in value?{...value.keybindings}:keybindingOptions;const compiled=compileKeybindings(bindings,mac);options={...options,...value};keybindingOptions=bindings;keybinding=compiled;cancelEdit();interactions?.changed();cancelWords();},
-      get configuration(){return Object.fromEntries(['autoIndent','indentUnit','hoverDelay','providerTimeout','keybindings','middleClickDefinition','wordProvider','hoverProvider','definitionProvider','onBeforeEdit','onChange','onSelectionChange','onKeyDown','onNavigate'].map(key=>[key,key==='keybindings'?{...keybindingOptions}:options[key]??({autoIndent:'keep',indentUnit:'    ',hoverDelay:350,providerTimeout:8000,middleClickDefinition:true}[key])]));},
+      configure(value){if(destroyed)return;const bindings='keybindings' in value?{...value.keybindings}:keybindingOptions;const compiled=compileKeybindings(bindings,mac);options={...options,...value};keybindingOptions=bindings;keybinding=compiled;cancelEdit();completion?.hide();interactions?.changed();cancelWords();},
+      get configuration(){return Object.fromEntries(['autoIndent','indentUnit','hoverDelay','providerTimeout','keybindings','middleClickDefinition','automaticCompletion','completionDelay','completionProvider','wordProvider','hoverProvider','definitionProvider','onBeforeEdit','onChange','onSelectionChange','onKeyDown','onNavigate'].map(key=>[key,key==='keybindings'?{...keybindingOptions}:options[key]??({autoIndent:'keep',indentUnit:'    ',hoverDelay:350,providerTimeout:8000,middleClickDefinition:true,automaticCompletion:true,completionDelay:120}[key])]));},
       executeCommand,
+      triggerCompletion(){return completion.trigger();},
+      acceptCompletion(index){return completion.accept(index);},
+      hideCompletion(){completion.hide();},
+      get completion(){return completion.state;},
       lineRange,wordRange,
       addOverlay:value=>overlays.add(value),
       showHover(content,anchor=currentSelection().head){interactions.show(content,anchor);},
@@ -671,6 +684,7 @@ async function boot(){
       },
     };
     commands=new CommandController({api,options:()=>options,report:reportProvider,edit(...args){commands.release();return edit(...args);}});
+    completion=new CompletionController({api,options:()=>options,overlays,report:reportProvider,emit,edit});
     diagnostics=new DiagnosticLayer(api,viewport,$('numbers'),$('diagnostic-summary'));
     interactions=new Interactions({api,options:()=>options,overlays,wordRange,diagnosticHover:offset=>diagnostics.hover(offset),report:reportProvider});
     return api;

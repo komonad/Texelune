@@ -75,8 +75,24 @@ test('provider binding disposal preserves a later custom provider',()=>{
   let configuration={hoverProvider:()=>null};const original=configuration.hoverProvider;
   const editor={root:{host:new EventTarget()},get configuration(){return{...configuration};},configure:patch=>Object.assign(configuration,patch)};
   const client=new LspClient(editor,{}),detach=client.attach(),custom=()=>({contents:'custom'});
-  editor.configure({definitionProvider:custom});detach();detach();
-  assert.equal(configuration.hoverProvider,original);assert.equal(configuration.definitionProvider,custom);client.dispose();
+  editor.configure({definitionProvider:custom,completionProvider:custom});detach();detach();
+  assert.equal(configuration.hoverProvider,original);assert.equal(configuration.definitionProvider,custom);assert.equal(configuration.completionProvider,custom);client.dispose();
+});
+
+test('completion queries carry manual and trigger-character contexts through the adapter',async()=>{
+  const sent=[],editor={root:{host:new EventTarget()},version:0,selection:{head:2}},client=new LspClient(editor,{});
+  client.state='ready';client.worker={postMessage:message=>sent.push(message),terminate(){}};
+  const manual=client.complete();assert.deepEqual(sent.at(-1).completionContext,{triggerKind:1});
+  client.receive({type:'reply',epoch:0,id:sent.at(-1).id,result:[]});await manual;
+  const triggered=client.complete(2,{triggerCharacter:'.'});assert.deepEqual(sent.at(-1).completionContext,{triggerKind:2,triggerCharacter:'.'});
+  client.receive({type:'reply',epoch:0,id:sent.at(-1).id,result:[]});await triggered;client.dispose();
+});
+
+test('transport failures close only the completion provider owned by the language binding',()=>{
+  let configuration={},closed=0;const editor={root:{host:new EventTarget()},get configuration(){return configuration;},configure:patch=>Object.assign(configuration,patch),hideCompletion:()=>closed++};
+  const client=new LspClient(editor,{});client.attach();
+  client.receive({type:'status',epoch:0,state:'error',message:'Server stopped'});assert.equal(closed,1);
+  configuration.completionProvider=()=>[];client.receive({type:'status',epoch:0,state:'disconnected',message:'Disconnected'});assert.equal(closed,1);client.dispose();
 });
 
 test('attached diagnostics reject stale batches and release only markers owned by the binding',()=>{

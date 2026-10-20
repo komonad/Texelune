@@ -20,6 +20,7 @@ async function openTarget(target,instance,signal){
   if(signal.aborted)return true;
   buffers.set(lsp.options.uri,{text:editor.text});lsp.options.uri=target.uri;
   editor.load(document.text,relative.split('/').at(-1));currentFile='workspace';$('document-name').textContent=relative;
+  editor.configure({automaticCompletion:true});
   const range=target.selectionRange??target.range,start=editor.offsetAt(range.start),end=editor.offsetAt(range.end);
   editor.select(start,end);editor.reveal(start);editor.focus();return true;
 }
@@ -51,8 +52,7 @@ async function hover(){if(!hasLanguageService)return;try{const result=await lsp.
 $('hover-request').onclick=hover;
 async function complete(){
   if(!hasLanguageService)return [];
-  panel('inspect');$('completions').replaceChildren();
-  try{const revision=editor.version,items=await lsp.complete();for(const item of items.filter(i=>!i.additionalEdits&&!i.snippet).slice(0,24)){const button=document.createElement('button');button.textContent=item.label;button.title=item.detail;button.onclick=()=>{if(editor.version!==revision){status('文档已更新，请重新请求补全。');return;}editor.replace(item.start,item.end,item.text);editor.focus();$('completions').replaceChildren();};$('completions').append(button);}if(!items.length)status('当前位置没有补全结果。');return items;}catch(error){status(error.message);return [];}
+  editor.focus();const items=await editor.triggerCompletion();if(!items.length)status('当前位置没有补全结果。');return items;
 }
 $('completion-request').onclick=complete;
 $('refresh-lsp').onclick=()=>lsp.refresh();
@@ -60,14 +60,15 @@ async function reconnect(){if(!editor||!hasLanguageService)return;if(!['code','w
 $('reconnect').onclick=reconnect;
 function setFile(key){
   currentFile=key;clearTimeout(hoverTimer);lsp.disconnect();renderDiagnostics([]);$('highlight-source').textContent=key==='code'?(hasLanguageService?'LSP 连接中…':'内置语法高亮'):'纯文本 · Unicode 布局';
+  editor.configure({automaticCompletion:key==='code'});
   document.querySelectorAll('[data-sample]').forEach(button=>button.classList.toggle('active',button.dataset.sample===key));
   const name=key==='code'?(workspace.filename??'main.rs'):key+'.txt';$('document-name').textContent=name;editor.setSyntax(key==='code'&&workspace.languageId!=='typescript');lsp.options.uri=workspace.uri;editor.load(key==='code'?(buffers.get(workspace.uri)?.text??workspace.text):samples[key],name);if(key==='code')void reconnect();
 }
 document.querySelectorAll('[data-sample]').forEach(button=>button.onclick=()=>setFile(button.dataset.sample));
-async function synthetic(bytes,code=false){currentFile='stress';lsp.disconnect();renderDiagnostics([]);$('highlight-source').textContent='大文档 · 语言服务暂停';$('document-name').textContent=(bytes/1048576)+'MiB.txt';editor.setSyntax(code);await editor.loadSynthetic(bytes,code);status('大文档已加载，编辑器独立运行。');}
+async function synthetic(bytes,code=false){currentFile='stress';editor.configure({automaticCompletion:false});lsp.disconnect();renderDiagnostics([]);$('highlight-source').textContent='大文档 · 语言服务暂停';$('document-name').textContent=(bytes/1048576)+'MiB.txt';editor.setSyntax(code);await editor.loadSynthetic(bytes,code);status('大文档已加载，编辑器独立运行。');}
 $('large-100mb').onclick=()=>synthetic(100*1048576);
 $('long-code').onclick=()=>synthetic(16*1048576,true);
-function stress(kind){currentFile='stress';lsp.disconnect();const worker=new Worker(new URL('./stress.js',import.meta.url));status('生成测试文档…');worker.onmessage=({data})=>{editor.load(data,kind+'.txt');editor.setSyntax(false);$('document-name').textContent=kind+'.txt';$('highlight-source').textContent='文本布局';worker.terminate();status('测试文档已加载。');};worker.postMessage(kind);}
+function stress(kind){currentFile='stress';editor.configure({automaticCompletion:false});lsp.disconnect();const worker=new Worker(new URL('./stress.js',import.meta.url));status('生成测试文档…');worker.onmessage=({data})=>{editor.load(data,kind+'.txt');editor.setSyntax(false);$('document-name').textContent=kind+'.txt';$('highlight-source').textContent='文本布局';worker.terminate();status('测试文档已加载。');};worker.postMessage(kind);}
 for(const kind of ['large','long','combining'])$(kind).onclick=()=>stress(kind);
 
 async function boot(){
@@ -85,8 +86,7 @@ async function boot(){
     lsp.addEventListener('timing',({detail})=>$('service-cost').textContent='语义请求与处理 '+detail.elapsed.toFixed(1)+' ms');
     editor.on('diagnosticschange',({detail})=>renderDiagnostics(detail.diagnostics));
     editor.root.host.addEventListener('selectionchange',()=>{clearTimeout(hoverTimer);if(!editor.selection||$('panel-inspect').hidden)return;hoverTimer=setTimeout(hover,350);});
-    editor.root.host.addEventListener('change',()=>{clearTimeout(hoverTimer);$('completions').replaceChildren();});
-    editor.root.host.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.code==='Space'){event.preventDefault();void complete();}},{capture:true});
+    editor.root.host.addEventListener('change',()=>clearTimeout(hoverTimer));
     editor.root.host.addEventListener('notice',({detail})=>status(detail));
     updateThemeFields();
     window.studio={editor,lsp,get diagnostics(){return diagnostics;},setFile,applyTheme,hover,complete};

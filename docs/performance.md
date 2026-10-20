@@ -43,6 +43,6 @@ Sample windows are bounded; the panel refreshes at most four times per second. I
 - Unwrapped ASCII uses a caret-following horizontal window; there is no separate horizontal scrollbar.
 - Ligature carets use grapheme subdivision, not GDEF caret tables.
 - Automated composition tests do not replace OS IME validation. Complete screen-reader navigation, EditContext, multiple cursors and rich HTML import/export are not implemented.
-- Demo completions exclude snippet/additional-edit items; LSP supplies no built-in persistence.
+- Completion excludes snippet/additional-edit items; LSP supplies no built-in persistence.
 
 144Hz is a target, **not a universal acceptance result**. Validate representative text, scripts, decorations, viewport and hardware. See [validation](validation.md) and [contribution checks](../CONTRIBUTING.md).

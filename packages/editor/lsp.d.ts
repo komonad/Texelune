@@ -1,6 +1,6 @@
 import type {EditorAPI,EditorDiagnostic,NavigationTarget,HoverResult} from './index.js';
 export interface LspOptions { url?: string; workerUrl?: string; workerType?: 'module' | 'classic'; rootUri: string; uri: string; languageId?: string; maxDocumentBytes?: number; timeout?: number; }
-export interface Completion { label: string; detail: string; text: string; start: number; end: number; additionalEdits: boolean; snippet: boolean; }
+export interface Completion { label: string; detail: string; text: string; start: number; end: number; additionalEdits: boolean; snippet: boolean; filterText?: string; sortText?: string; preselect?: boolean; kind?: number; }
 export interface Diagnostic extends EditorDiagnostic { range: import('./index.js').LspRange; }
 export interface LspEvents {
   status: {state: string; message: string};
@@ -24,7 +24,7 @@ export class LspClient extends EventTarget {
   disconnect(): void;
   refresh(): void;
   hover(offset?: number, options?: {signal?: AbortSignal}): Promise<HoverResult | null>;
-  complete(offset?: number, options?: {signal?: AbortSignal}): Promise<Completion[]>;
+  complete(offset?: number, options?: {signal?: AbortSignal; triggerCharacter?: string | undefined}): Promise<Completion[]>;
   definition(offset?: number, options?: {signal?: AbortSignal}): Promise<NavigationTarget[]>;
   attach(): () => void;
   dispose(): void;

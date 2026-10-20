@@ -1,5 +1,11 @@
 # Validation
 
+## Completion and demonstration documents
+
+`tests/browser/completion-check.js` covers manual and automatic suggestions, prefix replacement, ranking and preselection, keyboard/pointer acceptance, focus retention, one-step undo, shortcut and edit-hook overrides, request cancellation, document replacement at version zero and provider deadlines. The native check accepts a real rust-analyzer completion; the static check accepts a TypeScript Worker completion. Unit tests validate scalar ranges after emoji, combining identifiers, full-word replacement, bounded inference and LSP completion defaults. The TypeScript workspace passes semantic checks and exposes catalog member suggestions.
+
+The code examples contain catalog operations, generic collections, asynchronous iteration, text statistics and multilingual strings. The Unicode and BiDi documents include language-specific marks, emoji ZWJ, flags, variation selectors, invisible separators, directional isolates and long wrapped combinations.
+
 ## Keyboard commands and middle-click navigation
 
 `tests/browser/commands-check.js` exercises native and asynchronous clipboard access, empty-selection line copy/cut, CRLF and trailing-empty-line deletion, undo selection restoration, linewise paste, edit-hook vetoes, line transforms, Unicode word deletion, binding overrides, disabled bindings and callback precedence. It validates a Worker-prepared line duplication, cancellation by later input, streamed copy and remapped asynchronous cut. Unit tests cover normalized platform bindings, IME/AltGraph exclusions, directed scalar selection mapping, Unicode separators and EOF line transforms. The real language-service definition check uses middle-click to open and select a cross-file definition.

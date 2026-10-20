@@ -13,11 +13,12 @@ export const defaultKeybindings=Object.freeze({
   'Home':'cursorLineStart','End':'cursorLineEnd','Shift+Home':'selectLineStart','Shift+End':'selectLineEnd',
   'Mod+Home':'cursorDocumentStart','Mod+End':'cursorDocumentEnd','Mod+Shift+Home':'selectDocumentStart','Mod+Shift+End':'selectDocumentEnd',
   'Backspace':'deleteLeft','Delete':'deleteRight','Escape':'cancel','F12':'goToDefinition',
+  'Mod+Space':'triggerCompletion',
   'F8':'nextDiagnostic','Shift+F8':'previousDiagnostic',
   'Mod+Plus':'increaseFontSize','Mod+=':'increaseFontSize','Mod+Shift+Plus':'increaseFontSize','Mod+-':'decreaseFontSize','Mod+0':'resetFontSize',
   'Alt+p':'togglePerformance','Alt+Enter':'toggleFullscreen',
 });
-export const editorCommands=Object.freeze([...new Set(Object.values(defaultKeybindings))]);
+export const editorCommands=Object.freeze([...new Set(Object.values(defaultKeybindings)),'acceptCompletion','nextCompletion','previousCompletion','hideCompletion']);
 const aliases={arrowleft:'left',arrowright:'right',arrowup:'up',arrowdown:'down',esc:'escape',return:'enter',' ':'space','+':'plus',control:'ctrl',cmd:'meta',command:'meta',option:'alt'};
 const keyName=key=>aliases[key.toLowerCase()]??key.toLowerCase();
 export function compileKeybindings(overrides={},mac=false){
@@ -27,15 +28,17 @@ export function compileKeybindings(overrides={},mac=false){
     if(!key||parts.some(part=>!['mod','ctrl','meta','shift','alt'].includes(part)))throw new TypeError('Invalid shortcut: '+shortcut);
     return['ctrl','meta','alt','shift'].filter(mod=>modifiers.has(mod)).concat(key).join('+');
   };
-  const map=new Map();
+  const map=new Map(),overridden=new Set(Object.keys(overrides).map(normalize));
   for(const [shortcut,command]of [...Object.entries(defaultKeybindings),...Object.entries(overrides)]){
     if(command!==null&&typeof command!=='function'&&!editorCommands.includes(command))throw new TypeError('Unknown editor command: '+command);
     map.set(normalize(shortcut),command);
   }
-  return event=>{
+  const eventKey=event=>[event.ctrlKey?'ctrl':null,event.metaKey?'meta':null,event.altKey?'alt':null,event.shiftKey?'shift':null,keyName(event.key)].filter(Boolean).join('+');
+  const resolve=event=>{
     if(event.isComposing||event.getModifierState?.('AltGraph')||['Dead','Process','Unidentified'].includes(event.key))return undefined;
-    return map.get([event.ctrlKey?'ctrl':null,event.metaKey?'meta':null,event.altKey?'alt':null,event.shiftKey?'shift':null,keyName(event.key)].filter(Boolean).join('+'));
+    return map.get(eventKey(event));
   };
+  resolve.isOverridden=event=>overridden.has(eventKey(event));return resolve;
 }
 export function scalarCount(text){let count=0;for(const _ of text)count++;return count;}
 export const lineEnding=text=>text.match(/(?:\r\n|[\r\n\u000b\u000c\u0085\u2028\u2029])$/u)?.[0]??'';

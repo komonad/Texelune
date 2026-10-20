@@ -71,7 +71,7 @@ editor.configure({
 
 `onBeforeEdit(request,editor)` 在文本替换前同步执行。请求包含 `start/end/text/source/caretOffset/version/selection`。返回 `false` 取消，返回替换请求可改写文本和范围，返回 `undefined` 保持原请求。随后触发可取消的 `beforeedit` 事件。版本过期、非法范围或回调抛错时不应用事务；错误通过 `providererror` 报告。
 
-拦截覆盖普通输入、删除、剪切、粘贴、IME 更新、换行、Tab、行编辑命令和 `insert/replace/applyEdit`。`source` 为 `input/delete/cut/paste/composition/newline/tab/api` 或行编辑命令名。格式事务、撤销/重做和文档替换不经过文本改写钩子；普通事务均通过 `change/onChange` 通知，文档替换使用 `documentchange`。IME 更新属于一个组合输入历史组。
+拦截覆盖普通输入、删除、剪切、粘贴、IME 更新、换行、Tab、行编辑命令和 `insert/replace/applyEdit`。`source` 为 `input/delete/cut/paste/composition/newline/tab/completion/api` 或行编辑命令名。格式事务、撤销/重做和文档替换不经过文本改写钩子；普通事务均通过 `change/onChange` 通知，文档替换使用 `documentchange`。IME 更新属于一个组合输入历史组。
 
 `onBeforeEdit/onChange/onSelectionChange/onKeyDown` 是同步主线程回调，应保持轻量。`onKeyDown` 返回 `true` 或调用 `preventDefault()` 表示已处理。不要把 Promise 返回给 `onBeforeEdit`；昂贵分析放入 Worker，异步结果使用 `applyEdit(request,readVersion)`。避免在没有终止条件的 `onChange` 中再次编辑文档。
 
@@ -111,6 +111,7 @@ await editor.executeCommand('selectLine');
 | Backspace / Delete，加 Mod | 删除字素 / 按分词删除。 |
 | Mod+B / I / U | 粗体 / 斜体 / 下划线。 |
 | F12，F8 / Shift+F8 | 定义跳转，下一个 / 上一个诊断。 |
+| Mod+Space | `triggerCompletion`，在光标旁请求补全。 |
 | Mod+Plus / = / - / 0 | 增大 / 减小 / 重置字号。 |
 | Alt+P / Alt+Enter，Escape | 性能窗 / 全屏；取消待处理命令、关闭提示和退出全屏。 |
 
@@ -133,6 +134,7 @@ await editor.executeCommand('selectLine');
 | `themechange` | 完整解析后的主题。 |
 | `frame` | 可见布局完整、版本与视口请求匹配且几何已上传的 `Frame`，不代表 GPU 已显示完成。 |
 | `diagnosticschange` | `{version,diagnostics}`，诊断替换或过期清除。 |
+| `completionchange` | `{visible,pending,index,items}`，补全查询、菜单选择或关闭。 |
 | `navigate` | `NavigationTarget`，可取消默认跳转。 |
 | `providererror` | `{kind,error}`，取消不作为错误报告。 |
 | `notice` | 用户状态字符串。 |
@@ -231,6 +233,34 @@ editor.configure({
 
 `IndentContext` 包含 `before/after/leadingWhitespace/indentUnit/selection/position/version/signal/truncated`。前后文各限制为 4096 scalar，前导缩进最多读取 4096 scalar；`truncated` 标识截断。等待期间继续输入、移动选择、切换文档、配置变化或销毁会取消结果，防止覆盖新操作。一次缩进插入是一个撤销事务。
 
+## 补全
+
+```ts
+editor.configure({
+  automaticCompletion: true,
+  completionDelay: 120,
+  async completionProvider({offset, version, signal}) {
+    return querySymbols({offset, version, signal});
+  },
+});
+const items = await editor.triggerCompletion();
+editor.acceptCompletion(0);
+editor.hideCompletion();
+editor.on('completionchange', ({detail}) => console.log(detail.pending, detail.items.length));
+```
+
+`completionProvider` 接收 `CompletionContext`：通用 provider 字段，以及 `triggerKind:'invoked'|'automatic'`、可选 `triggerCharacter`。返回候选数组或 `null`，允许异步。`CompletionItem` 包含 `label`，可选 `text/start/end/detail/filterText/sortText/preselect/kind`；`start/end` 是当前读版本的 scalar 半开范围，必须覆盖查询位置。省略文本时插入标签，省略范围时使用附近标识符的完整范围，包括光标右侧后缀。标识符推断各扫描前后最多 513 scalar；超出 512 scalar 的单侧部分需要显式范围。
+
+候选按 `filterText ?? label` 做 NFC 与大小写无关的前缀过滤，按 `sortText ?? label` 稳定排序；默认首项，优先选择标记为 `preselect` 的项。最多处理 200 项，显示标签和详情时限制长度。候选与详情按纯文本显示，颜色跟随组件主题。菜单位于光标旁，空间不足时向上或向左调整，保留输入焦点，并通过 listbox、option 和 `aria-activedescendant` 暴露当前项。
+
+Ctrl/Meta+Space 手动查询。输入标识符字符、`.` 或 `:` 后自动查询，默认防抖 120ms；`completionDelay` 可调整，`automaticCompletion:false` 关闭自动查询。IME 组合输入期间关闭菜单，组合结束后可再次自动查询。菜单打开时，↑/↓ 循环选择，PageUp/PageDown 跨 8 项，Enter/Tab 接受，Escape 关闭。显式 `keybindings` 与 `onKeyDown` 优先于菜单快捷键；支持 `triggerCompletion/acceptCompletion/nextCompletion/previousCompletion/hideCompletion` 命令。
+
+`triggerCompletion()` 最小幅度显露光标并返回经过筛选的候选数组，取消、超时或无结果时为空；`acceptCompletion(index?)` 默认接受当前项，返回是否应用；`hideCompletion()` 取消准备并关闭菜单。只读 `completion` 和 `completionchange` 提供 `{visible,pending,index,items}`。接受候选使用 `source:'completion'` 的单次文本事务，经过编辑拦截并可一次撤销。`EditorChange.source` 标识文本编辑来源；撤销、重做和格式事务可能不包含此字段。
+
+每批结果严格绑定文档版本和选区。继续编辑、移动选择、文档替换、失焦、正文点击或滚轮、重新配置、销毁使查询失效；同版本零的不同文档也会取消。异步请求携带 `AbortSignal`，默认使用 `providerTimeout` 的 8 秒截止时间。补全不会阻塞输入，也不会将过期候选应用到后续编辑；昂贵计算由 provider 放到 Worker。
+
+`LspClient.attach()` 自动安装补全 provider，并恢复其仍拥有的配置。适配器支持数组与 `CompletionList`、默认编辑范围、`TextEdit`、`InsertReplaceEdit`（采用 replace 范围），在 LSP Worker 中将 UTF-16 转为 scalar。只有已声明的触发字符使用 LSP TriggerCharacter 上下文。断开服务关闭其补全菜单；超过同步上限时不读取全文。需要 snippet、额外编辑或自动导入的候选不显示；当前不执行 completion command、延迟 resolve、参数提示或占位符跳转。
+
 ## 装饰、主题与性能
 
 `setHighlights(spans,readVersion=version)` 替换派生装饰。旧版本异步批次会通过最多 4096 条编辑映射重放到当前版本。未来版本、超出历史或落后于已接受分析时返回 `false`，保留现有样式。派生高亮不进入撤销历史；文档持久格式优先。
@@ -276,7 +306,7 @@ detach();
 language.dispose();
 ```
 
-`attach()` 安装 hover/definition provider。取消绑定只恢复仍由本次绑定拥有的项，不覆盖后来配置的 provider；`dispose()` 也撤销绑定。`hover/definition/complete(offset?,{signal}?)` 支持取消，拒绝文档变化后的结果。`connect/disconnect/refresh` 管理连接。事件 `status/connected/diagnostics/tokens/timing` 在 `lsp.d.ts` 中定义。
+`attach()` 安装 hover/definition/completion provider。取消绑定只恢复仍由本次绑定拥有的项，不覆盖后来配置的 provider；`dispose()` 也撤销绑定。`hover/definition/complete(offset?,{signal}?)` 支持取消，拒绝文档变化后的结果。`complete` 还接受 `triggerCharacter`。`connect/disconnect/refresh` 管理连接。事件 `status/connected/diagnostics/tokens/timing` 在 `lsp.d.ts` 中定义。
 
 `LspOptions` 支持 `url?:string`、`workerUrl?:string`、`workerType?:'module'|'classic'`。至少提供一种传输地址；`workerUrl` 优先于 `url`。Worker 通过 `postMessage` 收发 JSON-RPC 对象，使用 LSP UTF-16 坐标，不使用字符串编码或 Content-Length 帧。Worker 默认采用 module 模式。
 

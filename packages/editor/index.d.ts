@@ -14,6 +14,10 @@ export interface NavigationTarget { uri?: string; range?: LspRange; selectionRan
 export interface ProviderContext { editor: EditorAPI; offset: number; position: Position; version: number; signal: AbortSignal; }
 export interface HoverResult { contents: string | Node | {value: string; language?: string; kind?: string} | Array<string | {value: string; language?: string}>; range?: LspRange; start?: number; end?: number; }
 export interface WordContext extends ProviderContext { text: string; start: number; truncated: boolean; }
+export interface CompletionContext extends ProviderContext { triggerKind: 'invoked' | 'automatic'; triggerCharacter?: string | undefined; }
+export interface CompletionItem { label: string; text?: string; start?: number; end?: number; detail?: string; filterText?: string; sortText?: string; preselect?: boolean; kind?: number; snippet?: boolean; additionalEdits?: boolean; }
+export interface ResolvedCompletion extends CompletionItem { start: number; end: number; text: string; detail: string; }
+export interface CompletionState { readonly visible: boolean; readonly pending: boolean; readonly index: number; readonly items: ReadonlyArray<Readonly<ResolvedCompletion>>; }
 export interface IndentContext { editor: EditorAPI; version: number; selection: Selection; position: Position; before: string; after: string; leadingWhitespace: string; indentUnit: string; truncated: boolean; signal: AbortSignal; }
 export interface IndentInsertion { text: string; caretOffset?: number; }
 export type AutoIndent = 'none' | 'keep' | 'brackets' | ((context: IndentContext) => string | IndentInsertion | null | Promise<string | IndentInsertion | null>);
@@ -28,6 +32,7 @@ export type EditorCommand =
   | 'cursorLineStart' | 'cursorLineEnd' | 'selectLineStart' | 'selectLineEnd'
   | 'cursorDocumentStart' | 'cursorDocumentEnd' | 'selectDocumentStart' | 'selectDocumentEnd'
   | 'deleteLeft' | 'deleteRight' | 'cancel' | 'goToDefinition' | 'nextDiagnostic' | 'previousDiagnostic'
+  | 'triggerCompletion' | 'acceptCompletion' | 'nextCompletion' | 'previousCompletion' | 'hideCompletion'
   | 'increaseFontSize' | 'decreaseFontSize' | 'resetFontSize' | 'togglePerformance' | 'toggleFullscreen';
 export interface KeybindingContext { editor: EditorAPI; event: KeyboardEvent; signal: AbortSignal; }
 export type KeybindingHandler = (context: KeybindingContext) => void | boolean | Promise<void | boolean>;
@@ -39,6 +44,9 @@ export interface EditorExtensions {
   providerTimeout?: number;
   keybindings?: Keybindings;
   middleClickDefinition?: boolean;
+  automaticCompletion?: boolean;
+  completionDelay?: number;
+  completionProvider?: (context: CompletionContext) => ReadonlyArray<CompletionItem> | null | Promise<ReadonlyArray<CompletionItem> | null>;
   wordProvider?: (context: WordContext) => TextRange | null | Promise<TextRange | null>;
   hoverProvider?: (context: ProviderContext) => HoverResult | string | Node | null | Promise<HoverResult | string | Node | null>;
   definitionProvider?: (context: ProviderContext) => NavigationTarget | NavigationTarget[] | null | Promise<NavigationTarget | NavigationTarget[] | null>;
@@ -78,8 +86,8 @@ export interface PerformanceSnapshot {
   lastCompletedFrame: {id: number; version: number; request: number; generation_ms: number; latency_ms: number; raf_wait_ms: number; backpressure_ms: number} | null;
   frameTrace: {state: string; id?: number; startedAt?: number; epoch?: number};
 }
-export interface EditorChange { version: number; start: number; end: number; text: string; selection: Selection; decorations: Highlight[]; }
-export interface EditorEvents { change: EditorChange; beforeedit: BeforeEdit; navigate: NavigationTarget; frame: Frame; diagnosticschange: {version: number; diagnostics: ReadonlyArray<Readonly<EditorDiagnostic>>}; providererror: {kind: string; error: Error}; documentchange: {name: string; version: number; bytes: number}; selectionchange: Selection; themechange: ResolvedTheme; notice: string; dispose: null; }
+export interface EditorChange { version: number; start: number; end: number; text: string; selection: Selection; decorations: Highlight[]; source?: string; }
+export interface EditorEvents { change: EditorChange; beforeedit: BeforeEdit; navigate: NavigationTarget; frame: Frame; completionchange: CompletionState; diagnosticschange: {version: number; diagnostics: ReadonlyArray<Readonly<EditorDiagnostic>>}; providererror: {kind: string; error: Error}; documentchange: {name: string; version: number; bytes: number}; selectionchange: Selection; themechange: ResolvedTheme; notice: string; dispose: null; }
 export interface EditorAPI {
   readonly element: TexeluneEditorElement;
   readonly root: ShadowRoot;
@@ -109,6 +117,10 @@ export interface EditorAPI {
   showHover(content: string | Node, anchor?: number): void;
   hideHover(): void;
   goToDefinition(offset?: number): Promise<void>;
+  triggerCompletion(): Promise<ReadonlyArray<Readonly<ResolvedCompletion>>>;
+  acceptCompletion(index?: number): boolean;
+  hideCompletion(): void;
+  readonly completion: CompletionState;
   readonly diagnostics: ReadonlyArray<Readonly<EditorDiagnostic>>;
   setDiagnostics(items: ReadonlyArray<EditorDiagnostic>, readVersion?: number): boolean;
   goToDiagnostic(direction?: 1 | -1): Readonly<EditorDiagnostic> | null;

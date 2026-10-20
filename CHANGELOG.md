@@ -11,5 +11,7 @@
 - Diagnostic underlines, severity gutter marks, composed hover messages and F8 navigation with version checks.
 - Atomic scene and glyph-atlas commits that retain complete visible content during asynchronous layout.
 - Configurable keyboard commands, logical-line clipboard operations, Worker-prepared line transforms and middle-click definition navigation.
+- Caret-anchored asynchronous completion, automatic and manual queries, configurable providers and keyboard/pointer acceptance.
+- Expanded Rust, TypeScript, Unicode and directional-text demonstration documents.
 
 Current compatibility and performance boundaries are documented in [performance and limitations](docs/performance.md).

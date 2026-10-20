@@ -57,3 +57,14 @@ test('reopening a URI at version zero invalidates the compiler snapshot from the
   assert.match(service.handle('textDocument/hover',{textDocument:{uri},position:{line:0,character:6}}).contents.value,/x: number/);
   service.handle('shutdown',{});
 });
+
+test('the browser workspace has valid types and offers catalog member completions',()=>{
+  const service=new TypeScriptService(ts,libraries),text=readFileSync(new URL('../../examples/worker-workspace/main.ts',import.meta.url),'utf8');
+  service.handle('textDocument/didOpen',{textDocument:{uri,text,version:0}});
+  const errors=service.handle('textDocument/diagnostic',{textDocument:{uri}}).items.filter(item=>item.severity===1);
+  assert.deepEqual(errors,[]);
+  const offset=text.indexOf('catalog.register')+'catalog.'.length,prefix=text.slice(0,offset).split('\n');
+  const result=service.handle('textDocument/completion',{textDocument:{uri},position:{line:prefix.length-1,character:prefix.at(-1).length}});
+  assert(result.items.some(item=>item.label==='register'));assert(result.items.some(item=>item.label==='search'));
+  service.handle('shutdown',{});
+});

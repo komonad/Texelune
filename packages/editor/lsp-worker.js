@@ -4,6 +4,7 @@ import {resolveTheme,tokenStyle} from './theme.js';
 import {yieldTask} from './benchmark.js';
 import {sameDocumentUri} from './uris.js';
 import {openTransport} from './lsp-transport.js';
+import {normalizeCompletions} from './completion-protocol.js';
 
 let socket,rpc,mirror,options,theme,version=0,epoch=0,opened=false,initialized=false,provider=null;
 let pendingChanges=[],syncTimer=0,tokenTimer=0,tokenAbort=null,tokenBatch=null,decorationEpoch=0;
@@ -99,7 +100,7 @@ async function connect(m){
   });
   const result=await rpc.request('initialize',{
     processId:null,rootUri:options.rootUri,workspaceFolders:[{uri:options.rootUri,name:'code-workspace'}],clientInfo:{name:'texelune-web',version:'0.3.0'},
-    capabilities:{experimental:{serverStatusNotification:true},general:{positionEncodings:['utf-16']},workspace:{diagnostics:{refreshSupport:true},configuration:true,workspaceFolders:true,semanticTokens:{refreshSupport:true}},textDocument:{definition:{linkSupport:true},diagnostic:{dynamicRegistration:false,relatedDocumentSupport:false},synchronization:{dynamicRegistration:false},hover:{contentFormat:['plaintext']},completion:{completionItem:{snippetSupport:false}},publishDiagnostics:{versionSupport:true},semanticTokens:{requests:{full:true,range:true},tokenTypes:['namespace','type','class','enum','interface','struct','typeParameter','parameter','variable','property','enumMember','event','function','method','macro','keyword','modifier','comment','string','number','regexp','operator','decorator'],tokenModifiers:['declaration','definition','readonly','static','deprecated','abstract','async','modification','documentation','defaultLibrary'],formats:['relative'],overlappingTokenSupport:false,multilineTokenSupport:false}}},
+    capabilities:{experimental:{serverStatusNotification:true},general:{positionEncodings:['utf-16']},workspace:{diagnostics:{refreshSupport:true},configuration:true,workspaceFolders:true,semanticTokens:{refreshSupport:true}},textDocument:{definition:{linkSupport:true},diagnostic:{dynamicRegistration:false,relatedDocumentSupport:false},synchronization:{dynamicRegistration:false},hover:{contentFormat:['plaintext']},completion:{contextSupport:true,completionItem:{snippetSupport:false,preselectSupport:true,insertReplaceSupport:true,labelDetailsSupport:true},completionList:{itemDefaults:['editRange','insertTextFormat']}},publishDiagnostics:{versionSupport:true},semanticTokens:{requests:{full:true,range:true},tokenTypes:['namespace','type','class','enum','interface','struct','typeParameter','parameter','variable','property','enumMember','event','function','method','macro','keyword','modifier','comment','string','number','regexp','operator','decorator'],tokenModifiers:['declaration','definition','readonly','static','deprecated','abstract','async','modification','documentation','defaultLibrary'],formats:['relative'],overlappingTokenSupport:false,multilineTokenSupport:false}}},
     initializationOptions:{checkOnSave:false,check:{enable:false},cargo:{buildScripts:{enable:false}},procMacro:{enable:false},diagnostics:{enable:true}}
   },{timeout:20000});
   if(result.capabilities.positionEncoding&&result.capabilities.positionEncoding!=='utf-16')throw new Error('Language server must support UTF-16 positions');
@@ -113,11 +114,10 @@ async function query(m){
   queries.get(m.method)?.abort();const abort=new AbortController();abort.requestId=m.id;queries.set(m.method,abort);
   try{
     await waitForRead(abort.signal);if(abort.signal.aborted||documentEpoch!==epoch||revision!==version)throw new DOMException('Document changed','AbortError');flushChanges();
-    let result=await rpc.request(m.method,{textDocument:{uri:options.uri},position:mirror.position_at(m.offset),...(m.method==='textDocument/completion'?{context:{triggerKind:1}}:{})},{signal:abort.signal});
+    let result=await rpc.request(m.method,{textDocument:{uri:options.uri},position:mirror.position_at(m.offset),...(m.method==='textDocument/completion'?{context:m.completionContext??{triggerKind:1}}:{})},{signal:abort.signal});
     if(documentEpoch!==epoch||revision!==version)throw new DOMException('Document changed','AbortError');
     if(m.method==='textDocument/completion'){
-      const items=Array.isArray(result)?result:result?.items??[];
-      result=items.slice(0,80).map(item=>{const edit=item.textEdit,range=edit?.range??edit?.replace;return{label:item.label,detail:item.detail??'',text:edit?.newText??item.insertText??item.label,start:range?mirror.offset_at(range.start.line,range.start.character):m.offset,end:range?mirror.offset_at(range.end.line,range.end.character):m.offset,additionalEdits:!!item.additionalTextEdits?.length,snippet:item.insertTextFormat===2};});
+      result=normalizeCompletions(result,mirror,m.offset);
     }
     if(m.method==='textDocument/hover'&&result?.range)result={...result,start:mirror.offset_at(result.range.start.line,result.range.start.character),end:mirror.offset_at(result.range.end.line,result.range.end.character)};
     if(m.method==='textDocument/definition'){

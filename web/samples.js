@@ -1,62 +1,52 @@
+const scripts=[
+  ['Latin','The quick brown fox jumps over the lazy dog. naïve façade Straße Æsir Œuvre.'],
+  ['中文','中文排版：行首禁则、标点挤压、括号（完整内容）与《书名》。'],
+  ['日本語','ひらがな、カタカナ、日本語の句読点。「折り返し」と選択。'],
+  ['한국어','한글 조합과 분리: 한글 / 한글 — 가각간갇갈감갑값.'],
+  ['العربية','السَّلَامُ عَلَيْكُمْ — لا لَا لِأَنَّ العربية ١٢٣٤٥٦٧٨٩٠.'],
+  ['עברית','שָׁלוֹם עוֹלָם — אֲנִי לוֹמֵד עִבְרִית 12345.'],
+  ['देवनागरी','नमस्ते दुनिया — हिन्दी संस्कृत क्षि क्‍ष ज्ञ श्र त्र.'],
+  ['বাংলা','বাংলা ভাষা — স্বাগতম বিশ্ব, ক্ষ জ্ঞ শ্র.'],
+  ['தமிழ்','வணக்கம் உலகம் — தமிழ் எழுத்துகள் மற்றும் குறியீடுகள்.'],
+  ['ไทย','ภาษาไทยมีการแบ่งคำและสระบนล่าง ภาษาไทยทดสอบการตัดบรรทัด'],
+  ['Tiếng Việt','Tiếng Việt: Trường học, tiếng nói, Nguyễn, ắ ằ ẵ ặ ệ ộ ự.'],
+  ['Ελληνικά','Καλημέρα κόσμε — α β γ δ ε, Ά Έ Ή Ί Ό Ύ Ώ, ἄνθρωπος.'],
+  ['Кириллица','Съешь ещё этих мягких французских булок, да выпей чаю.'],
+  ['Symbols','∀x ∈ ℝ: x² ≥ 0; α → β; ∑ₙ aₙ; ⌘ ⌥ ⇧ ⏎ ⇥ ∞ ≠ ≈ ≤ ≥.'],
+];
+const clusters=[
+  ['NFC / NFD','é / e\u0301 · Å / A\u030a · ñ / n\u0303 · ö / o\u0308'],
+  ['Stacked marks','a\u0310\u0301 e\u0308\u0323 o\u0308\u0332 n\u0303\u0301 A\u030a\u0301'],
+  ['Emoji professions','👩‍💻 👨‍🔬 🧑🏽‍🚀 👩🏿‍⚕️ 🧑🏻‍🎨 👨🏾‍🏫'],
+  ['Emoji families','👨‍👩‍👧‍👦 👩‍👩‍👦 👨‍👨‍👧 👩🏿‍❤️‍💋‍👩🏻 🧑‍🤝‍🧑'],
+  ['Flags','🇨🇳 🇭🇰 🇺🇳 🇯🇵 🇨🇦 🇳🇿 🇩🇪 🇫🇷 🇺🇸 🇮🇳'],
+  ['Keycaps','0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ #️⃣ *️⃣'],
+  ['Variation selectors','❤️ ♥︎ ✈️ ✈︎ ☀️ ☀︎ ☕ ⚙️ ⚙︎ ©️ ©︎'],
+  ['Skin tones','👍 👍🏻 👍🏼 👍🏽 👍🏾 👍🏿 👋🏽 🙏🏿 🫱🏽‍🫲🏻'],
+  ['Indic conjuncts','क्‍ष क्षि ज्ञि श्रि त्रि स्त्री हिन्दी संस्कृत বাংলা ক্ষ'],
+  ['Hangul Jamo','가 각 한 글 / 가 각 한 글'],
+  ['Zero width','a\u200bb a\u200cb a\u200db a\u2060b a\ufeffb'],
+  ['Spaces','a b / a\u00a0b / a\u202fb / a\u2009b / a\u3000b'],
+];
+const directional=[
+  ['LTR paragraph','English العربية עברית 中文 12345 (67890) end.'],
+  ['Arabic paragraph','مرحبا بالعالم، هذا نص عربي مع English و 12345.'],
+  ['Hebrew paragraph','שלום עולם, טקסט עברי עם English ו־12345.'],
+  ['Paired punctuation','abc (אבג 123) xyz [مرحبا 456] {דהו 789}.'],
+  ['RLI / PDI','before \u2067العربية 123\u2069 after.'],
+  ['LRI / PDI','עברית \u2066Rust 144 + TypeScript 60\u2069 סוף.'],
+  ['FSI / PDI','file: \u2068שלום.rs\u2069 · path: \u2068العربية/main.ts\u2069'],
+  ['Nested isolates','A \u2067אבג \u2066Rust 144\u2069 דהו\u2069 Z.'],
+  ['Embeddings','left \u202bאבג English 123\u202c right.'],
+  ['Directional marks','a\u200eb a\u200fb / 123\u061c456 / مرحبا\u200e@example.com'],
+  ['Arabic digits','الأرقام ٠١٢٣٤٥٦٧٨٩ و 0123456789، السعر ١٢٣٫٤٥.'],
+  ['Hebrew marks','שָׁלוֹם עוֹלָם, בְּרֵאשִׁית 123 (English).'],
+  ['Joining / ZWNJ','لا لَا السَّلَامُ عَلَيْكُمْ · می\u200cروم · می\u200dروم'],
+  ['Mixed paths','src/שלום/main.rs · https://example.test/العربية?q=123&lang=he'],
+  ['Emoji and RTL','👩🏽‍💻 שלום 👨‍👩‍👧‍👦 العربية 🇭🇰 1️⃣ end.'],
+];
+const section=(title,rows)=>title+'\n\n'+rows.map(([label,text])=>label+'\n'+text+'\n').join('\n');
 export const samples = {
-welcome: `// Rich-text editing sample
-
-use texelune::editor::{Document, Viewport};
-
-pub struct TextEngine {
-    document: Document,
-    viewport: Viewport,
-    frame_budget_ms: f64,
-}
-
-impl TextEngine {
-    pub async fn render(&mut self) {
-        let message = "Hello, 世界 · مرحبا · שלום";
-        let target_hz = 144;
-
-        // Layout runs in a Worker.
-        self.viewport.draw(message).await;
-    }
-}
-
-// A document can mix scripts, styles, and virtual content.
-// 中文自动折行。选择文字后，试试上方的粗体、斜体和背景色。
-// Hints do not become part of the saved document.
-`,
-unicode: `Unicode / grapheme laboratory
-
-Combining: é  a̐  ö̲  ñ  Å  क्‍ष  क्षि
-Emoji ZWJ: 👩‍💻 👨‍👩‍👧‍👦 🧑🏽‍🚀 👩🏿‍❤️‍💋‍👩🏻
-Flags: 🇨🇳 🇭🇰 🇺🇳 🇯🇵  Keycaps: 1️⃣ 2️⃣ #️⃣
-Skin tone: 👍🏽 👋🏻 🙏🏿  Variation: ❤️ ♥︎ ✈️ ✈︎
-Indic: नमस्ते दुनिया — हिन्दी और संस्कृत
-Hangul Jamo: 한글  한글
-中文：字体回退、自动换行、选区与输入法。
-
-Try Backspace after a cluster. One grapheme is one deletion.
-Use the arrow keys to move across visible caret stops.
-Combining marks remain attached across rope storage chunks.
-
-Soft wrapping is a view property. It never inserts newlines.
-`,
-bidi: `Bidirectional / visual caret laboratory
-
-English + العربية + עברית + 中文
-Hello مرحبا بالعالم — שלום עולם — 123 (456)
-مرحبا بالعالم، هذا نص عربي مع English و 12345.
-שלום עולם, טקסט עברי עם English ו־12345.
-
-Mixed punctuation: abc (אבג 123) xyz [مرحبا 456].
-Explicit isolates: before ⁧العربية 123⁩ after.
-Nested direction: A ⁧אבג ⁦Rust 144⁩ דהו⁩ Z.
-Arabic joining: لا لَا السَّلَامُ عَلَيْكُمْ
-Hebrew marks: שָׁלוֹם עוֹלָם
-
-ArrowLeft / ArrowRight follow visual caret positions.
-Backspace / Delete remove logical grapheme clusters.
-At a direction boundary, one text offset may have two visual positions.
-
-Inline hints use FSI / PDI isolation in the display model.
-Copying text preserves the underlying logical order.
-`
+  unicode:section('Unicode / grapheme',scripts)+'\n'+section('Extended grapheme clusters',clusters)+'\n'+section('Mixed soft-wrap paragraphs',scripts.map(([label,text],i)=>[label,`${text} ${clusters[i%clusters.length][1]} ${text} ${scripts[(i+5)%scripts.length][1]}`])),
+  bidi:section('Bidirectional text',directional)+'\n'+section('Wrapped directional paragraphs',directional.map(([label,text],i)=>[label,`${text} ${directional[(i+3)%directional.length][1]} ${text} ${directional[(i+7)%directional.length][1]} ${text}`]))+'\n'+section('RTL with grapheme clusters',clusters.map(([label,text],i)=>[label,`אבג ${text} العربية 123 (${text}) ${directional[i%directional.length][1]} end.`])),
 };

@@ -15,7 +15,7 @@ export class LspClient extends EventTarget {
     this.status('connecting',this.options.workerUrl?'启动语言服务 Worker…':'连接语言服务…');
     this.worker=new Worker(new URL('./lsp-worker.js',import.meta.url),{type:'module'});
     this.worker.onmessage=({data:m})=>this.receive(m);
-    this.worker.onerror=event=>{this.status('error',event.message);this.connectPending?.reject(new Error(event.message));this.rejectPending();};
+    this.worker.onerror=event=>{this.clearCompletion();this.status('error',event.message);this.connectPending?.reject(new Error(event.message));this.rejectPending();};
     const snapshot={text:this.editor.text,version:this.editor.version,epoch:++this.epoch};
     const connected=new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.connectPending=null;this.disconnect();reject(new Error('LSP initialization timed out'));},25000);this.connectPending={resolve:result=>{clearTimeout(timer);this.connectPending=null;resolve(result);},reject:error=>{clearTimeout(timer);this.connectPending=null;reject(error);}};});
     this.worker.postMessage({type:'connect',options:this.options,theme:this.editor.theme,...snapshot});
@@ -23,7 +23,7 @@ export class LspClient extends EventTarget {
   }
   receive(m){
     if(m.epoch!==this.epoch)return;
-    if(m.type==='status'){if('quiescent'in m)this.quiescent=m.quiescent;this.status(m.state,m.message);if(['error','disconnected'].includes(m.state)){this.clearDiagnostics?.();this.connectPending?.reject(new Error(m.message));this.rejectPending();this.worker?.terminate();this.worker=null;}return;}
+    if(m.type==='status'){if('quiescent'in m)this.quiescent=m.quiescent;this.status(m.state,m.message);if(['error','disconnected'].includes(m.state)){this.clearCompletion();this.clearDiagnostics?.();this.connectPending?.reject(new Error(m.message));this.rejectPending();this.worker?.terminate();this.worker=null;}return;}
     if(m.type==='connected'){this.capabilities=m.capabilities;this.status(m.indexing?'indexing':'ready',m.server.name+(m.indexing?' 正在索引工作区…':' 已连接'));this.connectPending?.resolve(m);this.emit('connected',m);return;}
     if(m.type==='reply'){const pending=this.pending.get(m.id);if(!pending)return;pending.cleanup();if(m.error||pending.version!==this.editor.version)pending.reject(new Error(m.error??'Document changed'));else pending.resolve(m.result);return;}
     if(m.type==='tokens'){
@@ -45,7 +45,7 @@ export class LspClient extends EventTarget {
     if(this.editor.documentInfo.bytes>this.options.maxDocumentBytes){this.disconnect();this.status('paused','大文档暂停 LSP，编辑继续运行');return;}
     const {start,end,text,version}=change;this.worker.postMessage({type:'change',epoch:this.epoch,start,end,text,version});
   }
-  query(method,offset=this.editor.selection.head,{signal}={}){
+  query(method,offset=this.editor.selection.head,{signal,triggerCharacter}={}){
     if(signal?.aborted)return Promise.reject(new DOMException('Cancelled','AbortError'));
     if(!this.worker||!['ready','indexing','waiting'].includes(this.state))return Promise.reject(new Error('LSP is not connected'));
     const id=++this.serial,version=this.editor.version;
@@ -54,7 +54,7 @@ export class LspClient extends EventTarget {
       const stop=error=>{cleanup();this.worker?.postMessage({type:'cancel',id,epoch:this.epoch});reject(error);};
       const cancel=()=>stop(new DOMException('Cancelled','AbortError'));
       const timer=setTimeout(()=>stop(new DOMException('LSP request timed out','TimeoutError')),12000);
-      signal?.addEventListener('abort',cancel,{once:true});this.pending.set(id,{resolve,reject,cleanup,version});this.worker.postMessage({type:'query',id,epoch:this.epoch,version,method,offset});
+      signal?.addEventListener('abort',cancel,{once:true});this.pending.set(id,{resolve,reject,cleanup,version});this.worker.postMessage({type:'query',id,epoch:this.epoch,version,method,offset,...(method==='textDocument/completion'?{completionContext:triggerCharacter?{triggerKind:2,triggerCharacter}:{triggerKind:1}}:{})});
     });
   }
   hover(offset,options){return this.query('textDocument/hover',offset,options);}
@@ -62,7 +62,8 @@ export class LspClient extends EventTarget {
   definition(offset,options){return this.query('textDocument/definition',offset,options);}
   attach(){
     this.detach?.();const previous=this.editor.configuration;
-    const providers={hoverProvider:context=>this.worker?this.hover(context.offset,{signal:context.signal}):null,definitionProvider:context=>this.worker?this.definition(context.offset,{signal:context.signal}):null};
+    const providers={hoverProvider:context=>this.worker?this.hover(context.offset,{signal:context.signal}):null,definitionProvider:context=>this.worker?this.definition(context.offset,{signal:context.signal}):null,completionProvider:context=>this.worker&&this.capabilities?.completionProvider?this.complete(context.offset,{signal:context.signal,triggerCharacter:this.capabilities.completionProvider.triggerCharacters?.includes(context.triggerCharacter)?context.triggerCharacter:undefined}):[]};
+    this.attachedCompletionProvider=providers.completionProvider;
     this.editor.configure(providers);let attached=true,ownedDiagnostics=null;
     const clearDiagnostics=()=>{if(ownedDiagnostics&&this.editor.diagnostics===ownedDiagnostics)this.editor.setDiagnostics([]);ownedDiagnostics=null;};
     const diagnostics=({detail})=>{if(this.editor.setDiagnostics?.(detail.diagnostics,detail.version)!==false)ownedDiagnostics=this.editor.diagnostics;};
@@ -71,7 +72,8 @@ export class LspClient extends EventTarget {
     this.detach=detach;return detach;
   }
   refresh(){this.worker?.postMessage({type:'refresh'});}
+  clearCompletion(){if(this.attachedCompletionProvider&&this.editor.configuration?.completionProvider===this.attachedCompletionProvider)this.editor.hideCompletion?.();}
   rejectPending(){for(const pending of [...this.pending.values()]){pending.cleanup();pending.reject(new Error('LSP session changed'));}this.pending.clear();}
-  disconnect(){this.clearDiagnostics?.();this.worker?.terminate();this.worker=null;this.epoch++;this.highlightSource=-1;this.highlightBatch=0;this.quiescent=false;this.connectPending?.reject(new Error('LSP session disconnected'));this.rejectPending();this.status('disconnected','LSP 未连接');}
+  disconnect(){this.clearCompletion();this.clearDiagnostics?.();this.worker?.terminate();this.worker=null;this.epoch++;this.highlightSource=-1;this.highlightBatch=0;this.quiescent=false;this.connectPending?.reject(new Error('LSP session disconnected'));this.rejectPending();this.status('disconnected','LSP 未连接');}
   dispose(){this.detach?.();this.detach=null;this.disconnect();this.abort.abort();}
 }

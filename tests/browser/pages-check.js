@@ -33,6 +33,14 @@ async page=>{
   assert(await page.evaluate(()=>!!window.texelune.root.querySelector('.diagnostic-mark[data-severity="1"]')),'Worker diagnostics appear inside the editor');
   const completions=await page.evaluate(()=>window.studio.lsp.complete([...window.texelune.text].length));
   assert(completions.some(item=>item.label==='greeting'&&item.end-item.start===5),'completion replaces the typed prefix');
+  await page.evaluate(()=>{const e=window.texelune;e.select(e.documentInfo.chars,e.documentInfo.chars);e.focus();});
+  await page.keyboard.press('Control+Space');await page.waitForFunction(()=>window.texelune.completion.items.some(item=>item.label==='greeting'));
+  await page.keyboard.press('Enter');assert(await page.evaluate(()=>window.texelune.text.endsWith('\ngreeting')),'the Worker completion popup accepts the selected prefix replacement');
+  await page.evaluate(()=>{const e=window.texelune;e.load('const palette = { name: "Paper", colors: ["#ffffff"] };\npalette','main.ts');e.select(e.documentInfo.chars,e.documentInfo.chars);e.focus();});await stable();
+  await page.keyboard.type('.');await page.waitForFunction(()=>window.texelune.completion.items.some(item=>item.label==='colors'));
+  assert(await page.evaluate(()=>{const e=window.texelune,r=e.root.querySelector('[role=option]').getBoundingClientRect();return !!e.root.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('.completion-widget');}),'completion remains clickable above the performance panel');
+  await page.screenshot({path:'D:/dev/Texelune/output/playwright/completion-typescript.png'});
+  assert(await page.evaluate(()=>{const e=window.texelune;return e.acceptCompletion(e.completion.items.findIndex(item=>item.label==='colors'))&&e.text.endsWith('palette.colors');}),'a member-access trigger queries and applies a TypeScript property');
   const timeout=await page.evaluate(async()=>{
     const {LspClient}=await import('../packages/editor/lsp.js');
     const workerUrl=URL.createObjectURL(new Blob([`self.onmessage=({data:m})=>{if(m.method==='initialize')postMessage({jsonrpc:'2.0',id:m.id,result:{capabilities:{positionEncoding:'utf-16',textDocumentSync:2,hoverProvider:true}}});};`],{type:'text/javascript'}));
@@ -50,6 +58,7 @@ async page=>{
   await page.waitForFunction(()=>window.texelune.documentInfo.bytes===100*1048576,null,{timeout:60000});await stable();
   await page.evaluate(()=>{window.texelune.select(0,0);window.texelune.insert('x');});await stable();
   assert(await page.evaluate(()=>window.texelune.documentInfo.bytes===100*1048576+1),'100 MiB document remains editable');
+  assert(await page.evaluate(async()=>{const e=window.texelune,result=await e.triggerCompletion();return result.length===0&&!window.studio.lsp.worker&&!e.completion.visible;}),'a large document does not start a language-service synchronization for completion');
   await page.getByRole('link',{name:'查看双实例接入示例 ↗'}).click();
   await page.waitForFunction(()=>window.editors?.length===2&&window.editors.every(editor=>editor.frame?.visible_ready),null,{timeout:30000});
   assert(backend.length===0,'static pages do not request server endpoints: '+backend.join(', '));
