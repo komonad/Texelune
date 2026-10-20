@@ -16,7 +16,7 @@ async function openTarget(target,instance,signal){
   const relative=target.uri?workspaceRelativeUri(target.uri,workspace.rootUri):null;
   if(relative===null){status('目标位于示例工作区之外：'+(target.uri??''));return true;}
   let document=buffers.get(target.uri);
-  if(!document){const url=new URL(services.source,import.meta.url);url.searchParams.set('path',relative);const response=await fetch(url,{signal});if(!response.ok)throw Error('无法读取工作区跳转目标');document=await response.json();}
+  if(!document){const url=new URL(services.source,import.meta.url);url.search='path='+encodeURIComponent(relative);const response=await fetch(url,{signal});if(!response.ok)throw Error('无法读取工作区跳转目标');document=await response.json();}
   if(signal.aborted)return true;
   buffers.set(lsp.options.uri,{text:editor.text});lsp.options.uri=target.uri;
   editor.load(document.text,relative.split('/').at(-1));currentFile='workspace';$('document-name').textContent=relative;
